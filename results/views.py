@@ -694,6 +694,13 @@ def ingest_run(request):
                     "duration_seconds": item.get("duration_seconds"),
                     "failure_reason": item.get("failure_reason", ""),
                     "log_path": log_path,
+                    "triage_category": item.get("triage_category", ""),
+                    "triage_owner": item.get("triage_owner", ""),
+                    "triage_explanation": item.get("triage_explanation", ""),
+                    "triage_evidence": item.get("triage_evidence", {}),
+                    "ai_status": item.get("ai_status", ""),
+                    "ai_model": item.get("ai_model", ""),
+                    "ai_analysis": item.get("ai_analysis", ""),
                 },
             )
         for item in payload.get("artifacts", []):
@@ -722,3 +729,56 @@ def ingest_run(request):
         {"id": run.id, "url": run.get_absolute_url(), "created": created},
         status=201 if created else 200,
     )
+
+
+@csrf_exempt
+@require_POST
+def ingest_triage(request):
+    """Attach advisory triage to an existing run without changing its verdict."""
+    if not _authorized(request):
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        payload = json.loads(request.body)
+        job_name = str(payload["job_name"])
+        build_number = int(payload["build_number"])
+        incoming = payload["results"]
+        if not isinstance(incoming, list):
+            raise TypeError
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "invalid payload"}, status=400)
+
+    run = TestRun.objects.filter(
+        job__name=job_name, build_number=build_number
+    ).select_related("job", "job__board").first()
+    if run is None:
+        return JsonResponse({"error": "run not found"}, status=404)
+
+    updated = 0
+    with transaction.atomic():
+        for item in incoming:
+            if not isinstance(item, dict):
+                continue
+            result = run.test_results.filter(test_case__name=item.get("name", "")).first()
+            if result is None:
+                continue
+            result.triage_category = str(item.get("triage_category", ""))[:80]
+            result.triage_owner = str(item.get("triage_owner", ""))[:120]
+            result.triage_explanation = str(item.get("triage_explanation", ""))[:10000]
+            evidence = item.get("triage_evidence", {})
+            result.triage_evidence = evidence if isinstance(evidence, dict) else {}
+            result.ai_status = str(item.get("ai_status", ""))[:24]
+            result.ai_model = str(item.get("ai_model", ""))[:120]
+            result.ai_analysis = str(item.get("ai_analysis", ""))[:50000]
+            result.save(
+                update_fields=[
+                    "triage_category",
+                    "triage_owner",
+                    "triage_explanation",
+                    "triage_evidence",
+                    "ai_status",
+                    "ai_model",
+                    "ai_analysis",
+                ]
+            )
+            updated += 1
+    return JsonResponse({"updated": updated, "url": run.get_absolute_url()})

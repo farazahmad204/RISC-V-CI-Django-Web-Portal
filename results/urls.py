@@ -52,6 +52,7 @@ urlpatterns = [
         name="test-uart-download",
     ),
     path("api/v1/runs/", views.ingest_run, name="api-ingest-run"),
+    path("api/v1/triage/", views.ingest_triage, name="api-ingest-triage"),
     path(
         "api/v1/elf/<uuid:submission_id>/download/",
         views.elf_download,

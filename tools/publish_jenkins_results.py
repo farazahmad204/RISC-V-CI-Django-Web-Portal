@@ -123,6 +123,35 @@ def read_cases(path: Path) -> dict[str, dict]:
     }
 
 
+def read_triage(run_root: Path, name: str) -> dict:
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._") or "case"
+    case_root = run_root / "triage" / "per_case" / safe_name
+    evidence_path = case_root / "evidence.json"
+    if not evidence_path.is_file():
+        return {}
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    ai_path = case_root / "ai_analysis.md"
+    error_path = case_root / "ai_error.txt"
+    ai_status = "SUCCESS" if ai_path.is_file() else ""
+    if error_path.is_file():
+        ai_status = "ERROR"
+    summary_path = run_root / "triage" / "summary.json"
+    summary = (
+        json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary_path.is_file()
+        else {}
+    )
+    return {
+        "triage_category": evidence.get("deterministic_category", ""),
+        "triage_owner": evidence.get("deterministic_owner", ""),
+        "triage_explanation": evidence.get("deterministic_explanation", ""),
+        "triage_evidence": evidence.get("extracted", {}),
+        "ai_status": ai_status,
+        "ai_model": summary.get("ai_model", ""),
+        "ai_analysis": ai_path.read_text(encoding="utf-8") if ai_path.is_file() else "",
+    }
+
+
 def read_xlsx_categories(path: Path) -> dict[str, str]:
     """Read test membership from the report workbook without an Excel dependency."""
     if not path.is_file():
@@ -374,6 +403,7 @@ def build_payload(args: argparse.Namespace) -> dict:
                 if uart_path.is_file()
                 else ""
             ),
+            **read_triage(run_root, name),
         }
         if category == "Privileged" and uart_path.is_file():
             result["uart_log_gzip_b64"] = base64.b64encode(
