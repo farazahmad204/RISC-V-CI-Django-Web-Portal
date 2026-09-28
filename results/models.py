@@ -164,6 +164,13 @@ class TestResult(models.Model):
     duration_seconds = models.FloatField(null=True, blank=True)
     failure_reason = models.TextField(blank=True)
     log_path = models.CharField(max_length=500, blank=True)
+    triage_category = models.CharField(max_length=80, blank=True)
+    triage_owner = models.CharField(max_length=120, blank=True)
+    triage_explanation = models.TextField(blank=True)
+    triage_evidence = models.JSONField(default=dict, blank=True)
+    ai_status = models.CharField(max_length=24, blank=True)
+    ai_model = models.CharField(max_length=120, blank=True)
+    ai_analysis = models.TextField(blank=True)
 
     class Meta:
         ordering = ["test_case__name"]

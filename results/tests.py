@@ -524,6 +524,71 @@ class PortalTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     @override_settings(PORTAL_INGEST_TOKEN="test-token")
+    def test_triage_ingest_updates_existing_failure_without_changing_verdict(self):
+        board = Board.objects.create(slug="vf2", name="VisionFive 2")
+        job = JenkinsJob.objects.create(board=board, name="vf2-uart-weekly")
+        run = TestRun.objects.create(
+            job=job,
+            build_number=7,
+            status=Status.UNSTABLE,
+            failed_cases=1,
+        )
+        test_case = ACTTestCase.objects.create(name="sv39_exceptions_Zaamo_Mmode")
+        result = TestResult.objects.create(
+            run=run,
+            test_case=test_case,
+            hardware_status=Status.FAIL,
+        )
+        response = self.client.post(
+            reverse("api-ingest-triage"),
+            data=json.dumps(
+                {
+                    "job_name": "vf2-uart-weekly",
+                    "build_number": 7,
+                    "results": [
+                        {
+                            "name": test_case.name,
+                            "triage_category": "trap_cause_mismatch",
+                            "triage_owner": "Needs architectural review",
+                            "triage_explanation": "Expected page fault, observed misaligned.",
+                            "triage_evidence": {"actual_value": "0x6"},
+                            "ai_status": "SUCCESS",
+                            "ai_model": "test-model",
+                            "ai_analysis": "## Finding\nEvidence is incomplete.",
+                        }
+                    ],
+                }
+            ),
+            content_type="application/json",
+            headers={"X-Portal-Token": "test-token"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["updated"], 1)
+        result.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(result.hardware_status, Status.FAIL)
+        self.assertEqual(run.status, Status.UNSTABLE)
+        self.assertEqual(result.triage_category, "trap_cause_mismatch")
+        self.assertEqual(result.ai_model, "test-model")
+
+        self.client.force_login(self.user)
+        detail = self.client.get(reverse("run-detail", args=["vf2", job.name, 7]))
+        self.assertContains(detail, "trap_cause_mismatch")
+        self.assertContains(detail, "Evidence is incomplete")
+
+    @override_settings(PORTAL_INGEST_TOKEN="test-token")
+    def test_triage_ingest_requires_existing_run(self):
+        response = self.client.post(
+            reverse("api-ingest-triage"),
+            data=json.dumps(
+                {"job_name": "missing", "build_number": 1, "results": []}
+            ),
+            content_type="application/json",
+            headers={"X-Portal-Token": "test-token"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    @override_settings(PORTAL_INGEST_TOKEN="test-token")
     def test_ingested_uart_log_is_served_by_authenticated_portal(self):
         uart_content = b"Booting VF2\nPASS ExceptionsM-01\n"
         payload = {

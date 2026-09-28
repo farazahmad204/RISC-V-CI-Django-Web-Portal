@@ -88,6 +88,22 @@ class PublisherTests(unittest.TestCase):
             uart_path = run_root / "per_case" / "ExceptionsM-01" / "uart.log"
             uart_path.parent.mkdir(parents=True)
             uart_path.write_bytes(b"UART output\n")
+            triage_path = run_root / "triage" / "per_case" / "ExceptionsM-01"
+            triage_path.mkdir(parents=True)
+            (run_root / "triage" / "summary.json").write_text(
+                json.dumps({"ai_model": "test-model"})
+            )
+            (triage_path / "evidence.json").write_text(
+                json.dumps(
+                    {
+                        "deterministic_category": "trap_cause_mismatch",
+                        "deterministic_owner": "Needs architectural review",
+                        "deterministic_explanation": "Expected 15, observed 6.",
+                        "extracted": {"expected_value": "0xf", "actual_value": "0x6"},
+                    }
+                )
+            )
+            (triage_path / "ai_analysis.md").write_text("## Finding\nNeeds review.\n")
             elf_path = artifact_root / "priv" / "ExceptionsM" / "ExceptionsM-01.sig.elf"
             elf_path.parent.mkdir(parents=True)
             elf_path.touch()
@@ -118,6 +134,9 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["spike_status"], "PASS")
         self.assertEqual(payload["results"][0]["hardware_status"], "FAIL")
         self.assertEqual(payload["results"][0]["category"], "Privileged")
+        self.assertEqual(payload["results"][0]["triage_category"], "trap_cause_mismatch")
+        self.assertEqual(payload["results"][0]["ai_status"], "SUCCESS")
+        self.assertEqual(payload["results"][0]["ai_model"], "test-model")
         self.assertEqual(
             gzip.decompress(base64.b64decode(payload["results"][0]["uart_log_gzip_b64"])),
             b"UART output\n",
