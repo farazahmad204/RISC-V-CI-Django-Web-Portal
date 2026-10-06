@@ -363,6 +363,32 @@ class PortalTests(TestCase):
         )
         self.assertEqual(denied.status_code, 403)
 
+    def test_hypervisor_suite_is_summarized_and_has_a_workbook_tab(self):
+        board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        job = JenkinsJob.objects.create(board=board, name="megrez-uart-weekly")
+        run = TestRun.objects.create(job=job, build_number=5, expected_cases=2, completed_cases=2)
+        for name, status in (("ExceptionsH_ecall-00", Status.PASS), ("H_trap-00", Status.FAIL)):
+            TestResult.objects.create(
+                run=run,
+                test_case=ACTTestCase.objects.create(
+                    name=name, category="Hypervisor", extension=name.rsplit("-", 1)[0]
+                ),
+                hardware_status=status,
+            )
+
+        self.client.force_login(self.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Hypervisor")
+        self.assertContains(dashboard, "1 passed · 1 failed · 2 executed")
+        detail = self.client.get(reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5]))
+        self.assertContains(detail, "Hypervisor tests")
+        workbook_url = reverse("run-workbook", args=["milkv-megrez", "megrez-uart-weekly", 5])
+        workbook = self.client.get(workbook_url)
+        self.assertContains(workbook, "Hypervisor Tests")
+        tab = self.client.get(f"{workbook_url}?suite=Hypervisor")
+        self.assertContains(tab, "H_trap-00")
+        self.assertContains(tab, "ExceptionsH_ecall-00")
+
     def test_authorized_user_can_add_and_save_analysis_column(self):
         editor = get_user_model().objects.create_user(
             "report-editor", password="safe-test-password"

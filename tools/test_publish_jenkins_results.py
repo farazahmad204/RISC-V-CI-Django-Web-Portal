@@ -210,6 +210,84 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["category"], "Privileged")
         self.assertEqual(payload["passed_cases"], 1)
 
+    def test_hypervisor_suites_get_their_own_category(self):
+        artifacts = {
+            "priv/ExceptionsH/ExceptionsH_ecall-00.sig.elf": "Hypervisor",
+            "priv/ExceptionsHSm/ExceptionsHSm_tsr-00.sig.elf": "Hypervisor",
+            "priv/H/H_trap-00.sig.elf": "Hypervisor",
+            "priv/SvHZicbo/SvH_sv39x4_cbo-00.sig.elf": "Hypervisor",
+            "priv/InterruptsHGei/InterruptsHGei_m-00.sig.elf": "Hypervisor",
+            "priv/Shcounterenw/Shcounterenw-00.sig.elf": "Hypervisor",
+            "priv/ExceptionsSm/ExceptionsSm-00.sig.elf": "Privileged",
+            "priv/ExceptionsSvSm/ExceptionsSvSm-00.sig.elf": "Privileged",
+            "priv/Smstateen/Smstateen-00.sig.elf": "Privileged",
+            "rv64i/I/I-add-01.sig.elf": "Non-Privileged",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "build"
+            for relative_path in artifacts:
+                path = root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+
+            whole_build = read_artifact_categories(root)
+            priv_root = read_artifact_categories(root / "priv")
+
+        expected = {
+            Path(path).name.removesuffix(".sig.elf"): category
+            for path, category in artifacts.items()
+        }
+        self.assertEqual(whole_build, expected)
+        # Privileged-only scopes pass build/priv itself as ARTIFACT_ROOT.
+        self.assertEqual(
+            priv_root, {k: v for k, v in expected.items() if v != "Non-Privileged"}
+        )
+
+    def test_hypervisor_scope_publishes_selected_cases_with_uart_logs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_root = root / "state"
+            run_root = root / "run"
+            artifact_root = root / "build" / "priv"
+            state_root.mkdir()
+            for suite, name in (("ExceptionsH", "ExceptionsH_ecall-00"), ("SvH", "SvH_blocked-00")):
+                elf = artifact_root / suite / f"{name}.sig.elf"
+                elf.parent.mkdir(parents=True, exist_ok=True)
+                elf.touch()
+            (state_root / "state.env").write_text(
+                "RUN_ID=hyp_run\nTEST_SCOPE=hypervisor\nEXPECTED_CASES=1\n"
+                f"ARTIFACT_ROOT={artifact_root}\n"
+            )
+            (state_root / "sail_reference_status.tsv").write_text(
+                "test_name\tsail_status\nExceptionsH_ecall-00\tPASS\n"
+            )
+            uart_log = run_root / "per_case" / "ExceptionsH_ecall-00" / "uart.log"
+            uart_log.parent.mkdir(parents=True)
+            uart_log.write_text("[UART_STREAM] DONE name=ExceptionsH_ecall-00 status=PASS\n")
+            (run_root / "cases.json").write_text(
+                json.dumps([{"test_name": "ExceptionsH_ecall-00", "status": "PASS"}])
+            )
+            args = argparse.Namespace(
+                state_root=state_root,
+                run_root=run_root,
+                board_slug="milkv-megrez",
+                board_name="Milk-V Megrez",
+                core_profile="ESWIN EIC7700X/SiFive P550",
+                job_name="megrez-uart-weekly",
+                build_number=5,
+                build_url="https://jenkins/job/megrez-uart-weekly/5/",
+                status="AUTO",
+                started_at="",
+                finished_at="",
+                suite_inventory_xlsx=None,
+            )
+            payload = build_payload(args)
+
+        self.assertEqual([item["name"] for item in payload["results"]], ["ExceptionsH_ecall-00"])
+        result = payload["results"][0]
+        self.assertEqual(result["category"], "Hypervisor")
+        self.assertIn("uart_log_gzip_b64", result)
+
 
 if __name__ == "__main__":
     unittest.main()

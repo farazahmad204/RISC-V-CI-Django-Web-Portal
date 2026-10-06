@@ -39,6 +39,9 @@ from .models import (
     TestRun,
 )
 
+# Suite categories in display order; TestCase.category holds one of these.
+SUITE_CATEGORIES = ("Privileged", "Hypervisor", "Non-Privileged", "Vector")
+
 
 def _uploaded_elf_details(upload):
     max_bytes = settings.PORTAL_ELF_UPLOAD_MAX_BYTES
@@ -227,7 +230,7 @@ def dashboard(request):
                     failed=Count("id", filter=Q(hardware_status=Status.FAIL)),
                 )
             }
-            for category in ("Privileged", "Non-Privileged", "Vector"):
+            for category in SUITE_CATEGORIES:
                 values = summaries.get(category, {})
                 if not values:
                     continue
@@ -327,7 +330,7 @@ def run_detail(request, slug, job_name, build_number):
     if query:
         results = results.filter(test_case__name__icontains=query)
     suite_summaries = []
-    for category in ("Privileged", "Non-Privileged", "Vector"):
+    for category in SUITE_CATEGORIES:
         summary = run.test_results.filter(test_case__category=category).aggregate(
             expected=Count("id"),
             completed=Count(
@@ -368,7 +371,7 @@ def run_workbook(request, slug, job_name, build_number):
     run = _run_for_job(slug, job_name, build_number)
     _require_run_access(request.user, run)
     selected_suite = request.GET.get("suite", "All")
-    suites = ("All", "Privileged", "Non-Privileged", "Vector")
+    suites = ("All", *SUITE_CATEGORIES)
     if selected_suite not in suites:
         selected_suite = "All"
 
@@ -497,7 +500,7 @@ def save_analysis_column(request, slug, job_name, build_number, column_id):
     messages.success(request, f'Analysis column "{column.name}" was saved.')
     destination = reverse("run-workbook", args=[slug, job_name, build_number])
     suite = request.POST.get("suite", "All")
-    if suite in {"Privileged", "Non-Privileged", "Vector"}:
+    if suite in SUITE_CATEGORIES:
         destination += f"?suite={quote(suite)}"
     return redirect(destination)
 

@@ -43,7 +43,13 @@ SUITE_SHEETS = {
     "Privileged Tests": "Privileged",
     "Non-Privileged Tests": "Non-Privileged",
     "Vector Tests": "Vector",
+    "Hypervisor Tests": "Hypervisor",
 }
+# Privileged suites that exercise the H extension (H*, *H, *H<suffix>) and the
+# Sh* profile extensions. Kept in step with HYPERVISOR_SUITE_REGEX in the
+# runner's ci/jenkins/weekly_vf2.sh (TEST_SCOPE=hypervisor).
+HYPERVISOR_SUITE = re.compile(r"^(H|Sh)|H(F|V|Gei|Sm|Zicbo|ZicboSm)?$")
+PRIVILEGED_CATEGORIES = {"Privileged", "Hypervisor"}
 SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -186,10 +192,19 @@ def read_xlsx_categories(path: Path) -> dict[str, str]:
     return categories
 
 
+def privileged_category(suite_dir: str) -> str:
+    return "Hypervisor" if HYPERVISOR_SUITE.search(suite_dir) else "Privileged"
+
+
 def read_artifact_categories(path: Path) -> dict[str, str]:
-    """Infer suite membership from ACT's build/<suite>/<extension> layout."""
+    """Infer suite membership from ACT's build/<suite>/<extension> layout.
+
+    ARTIFACT_ROOT is either the whole build tree or, for privileged-only scopes,
+    build/priv itself; in both cases priv/<extension>/ is privileged.
+    """
     if not path.is_dir():
         return {}
+    root_is_priv = path.name.lower() == "priv"
     categories: dict[str, str] = {}
     for artifact in path.rglob("*.sig.elf"):
         try:
@@ -199,8 +214,8 @@ def read_artifact_categories(path: Path) -> dict[str, str]:
         if not relative.parts:
             continue
         suite = relative.parts[0].lower()
-        if suite == "priv":
-            category = "Privileged"
+        if root_is_priv or suite == "priv":
+            category = privileged_category(artifact.parent.name)
         elif suite in {"rv32v", "rv64v", "vector"} or suite.endswith("v"):
             category = "Vector"
         else:
@@ -331,7 +346,7 @@ def build_payload(args: argparse.Namespace) -> dict:
     }
     observed_names = set(sail) | set(spike) | set(cases) | set(artifact_categories)
     test_scope = state.get("TEST_SCOPE", "").strip().lower()
-    if test_scope in {"priv", "all"}:
+    if test_scope in {"priv", "all", "unpriv", "hypervisor"}:
         # A job may be given a broader inventory than its Sail-runnable hardware
         # plan. Use inventories and unselected artifacts only as metadata; they
         # must not add tests that were excluded from this execution.
@@ -342,7 +357,16 @@ def build_payload(args: argparse.Namespace) -> dict:
         )
         names = sorted(selected_names or set(artifact_categories), key=str.casefold)
         if test_scope == "priv":
-            categories.update({name: "Privileged" for name in names})
+            categories.update(
+                {
+                    name: privileged_category(extension_for(name))
+                    if categories.get(name) not in PRIVILEGED_CATEGORIES
+                    else categories[name]
+                    for name in names
+                }
+            )
+        elif test_scope == "hypervisor":
+            categories.update({name: "Hypervisor" for name in names})
     else:
         names = sorted(observed_names | set(categories), key=str.casefold)
     run_id = state.get("RUN_ID", run_root.name)
@@ -375,7 +399,7 @@ def build_payload(args: argparse.Namespace) -> dict:
                 else ""
             ),
         }
-        if category == "Privileged" and uart_path.is_file():
+        if category in PRIVILEGED_CATEGORIES and uart_path.is_file():
             result["uart_log_gzip_b64"] = base64.b64encode(
                 gzip.compress(uart_path.read_bytes())
             ).decode("ascii")
