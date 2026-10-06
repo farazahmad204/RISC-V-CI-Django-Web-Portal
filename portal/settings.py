@@ -104,7 +104,9 @@ MEDIA_ROOT = Path(os.getenv("PORTAL_UPLOAD_ROOT", str(BASE_DIR / "uploads"))).re
 PORTAL_ELF_UPLOAD_MAX_BYTES = int(os.getenv("PORTAL_ELF_UPLOAD_MAX_BYTES", str(32 * 1024 * 1024)))
 PORTAL_SINGLE_ELF_BOARD_SLUGS = tuple(
     item.strip()
-    for item in os.getenv("PORTAL_SINGLE_ELF_BOARD_SLUGS", "visionfive2,bananapi-f3").split(",")
+    for item in os.getenv(
+        "PORTAL_SINGLE_ELF_BOARD_SLUGS", "visionfive2,bananapi-f3,milkv-megrez"
+    ).split(",")
     if item.strip()
 )
 JENKINS_TRIGGER_URL = os.getenv("JENKINS_TRIGGER_URL", "")
