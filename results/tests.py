@@ -380,7 +380,9 @@ class PortalTests(TestCase):
         dashboard = self.client.get(reverse("dashboard"))
         self.assertContains(dashboard, "Hypervisor")
         self.assertContains(dashboard, "1 passed · 1 failed · 2 executed")
-        detail = self.client.get(reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5]))
+        detail = self.client.get(
+            reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5])
+        )
         self.assertContains(detail, "Hypervisor tests")
         workbook_url = reverse("run-workbook", args=["milkv-megrez", "megrez-uart-weekly", 5])
         workbook = self.client.get(workbook_url)
@@ -586,3 +588,77 @@ class PortalTests(TestCase):
                 downloaded = self.client.get(reverse("test-uart-download", args=[result.id]))
                 self.assertEqual(downloaded.status_code, 200)
                 self.assertEqual(b"".join(downloaded.streaming_content), uart_content)
+
+    def test_board_info_page_shows_isa_specs_and_boot_flow(self):
+        board = Board.objects.create(
+            slug="milkv-megrez",
+            name="Milk-V Megrez",
+            profile={
+                "sections": [
+                    {
+                        "title": "ISA",
+                        "rows": [
+                            {
+                                "label": "Board ISA",
+                                "value": "rv64imafdchx",
+                                "status": "confirmed",
+                                "source": "OpenSBI boot log",
+                            },
+                            {"label": "Hypervisor tests", "value": "H 1.0", "status": "deviation"},
+                        ],
+                    }
+                ],
+                "extensions": {"source": "ACT config", "items": [["I", "2.1"], ["Sv48", "1.0.0"]]},
+                "boot_flows": [
+                    {
+                        "name": "CI boot",
+                        "status": "confirmed",
+                        "steps": ["ESWIN ROM", "UART runner"],
+                    }
+                ],
+                "notes": ["USB-C debug port must be unplugged."],
+            },
+        )
+
+        self.assertEqual(self.client.get(reverse("board-info", args=[board.slug])).status_code, 302)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("board-info", args=[board.slug]))
+
+        self.assertContains(response, "rv64imafdchx")
+        self.assertContains(response, "OpenSBI boot log")
+        self.assertContains(response, '<span class="badge status-pass">confirmed</span>', html=True)
+        self.assertContains(
+            response, '<span class="badge status-unstable">deviation</span>', html=True
+        )
+        self.assertContains(response, "<li><strong>Sv48</strong><span>1.0.0</span></li>", html=True)
+        self.assertContains(response, "<li>ESWIN ROM</li>", html=True)
+        self.assertContains(response, "USB-C debug port must be unplugged.")
+        self.assertNotContains(response, "Edit profile")
+        board_page = self.client.get(board.get_absolute_url())
+        self.assertContains(board_page, reverse("board-info", args=[board.slug]))
+
+    def test_board_info_page_without_profile(self):
+        board = Board.objects.create(slug="vf2", name="VisionFive 2")
+        staff = get_user_model().objects.create_user(
+            "profile-editor", password="safe-test-password", is_staff=True
+        )
+        self.client.force_login(staff)
+        response = self.client.get(reverse("board-info", args=[board.slug]))
+        self.assertContains(response, "No board profile has been recorded yet.")
+        self.assertContains(response, "Edit profile")
+
+    def test_seed_migration_fills_only_empty_profiles(self):
+        from importlib import import_module
+
+        from django.apps import apps
+
+        seed = import_module("results.migrations.0006_seed_board_profiles")
+        empty = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        edited = Board.objects.create(
+            slug="visionfive2", name="VisionFive 2", profile={"notes": ["x"]}
+        )
+        seed.seed(apps, None)
+        empty.refresh_from_db()
+        edited.refresh_from_db()
+        self.assertEqual(empty.profile["sections"][0]["title"], "Identity")
+        self.assertEqual(edited.profile, {"notes": ["x"]})

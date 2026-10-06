@@ -391,3 +391,124 @@
     flex-direction: column;
   }
 }
+
+/* Board info page */
+.board-info-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: var(--muted);
+}
+
+.board-info-section {
+  margin-top: 18px;
+}
+
+.board-info-section h2 {
+  margin: 0 0 12px;
+}
+
+.board-info-table h2 {
+  padding: 18px 20px 0;
+}
+
+.board-info-table table {
+  table-layout: fixed;
+  width: 100%;
+  white-space: normal;
+}
+
+.board-info-table .col-item {
+  width: 18%;
+}
+
+.board-info-table .col-value {
+  width: 44%;
+}
+
+.board-info-table .col-evidence {
+  width: 13%;
+}
+
+.board-info-table .col-source {
+  width: 25%;
+}
+
+.board-info-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.board-info-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.board-info-extensions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-info-extensions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.board-info-flow + .board-info-flow {
+  margin-top: 18px;
+}
+
+.board-info-flow ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-info-flow li {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.board-info-flow li.board-info-arrow {
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .board-info-table thead,
+  .board-info-table colgroup {
+    display: none;
+  }
+
+  .board-info-table table,
+  .board-info-table tbody,
+  .board-info-table tr,
+  .board-info-table td {
+    display: block;
+    width: auto;
+  }
+
+  .board-info-table tr {
+    padding: 12px 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  .board-info-table td {
+    padding: 3px 0;
+    border: 0;
+  }
+}
