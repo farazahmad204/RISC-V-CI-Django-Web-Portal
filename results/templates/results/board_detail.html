@@ -2,7 +2,7 @@
 {% block title %}{{ board.name }} · RISC-V CI Portal{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><span>{{ board.name }}</span></nav>
-<section class="hero compact"><div><p class="eyebrow">Board report</p><h1>{{ board.name }}</h1><p class="muted">{{ board.core_profile }}{% if board.description %} · {{ board.description }}{% endif %}</p></div></section>
+<section class="hero compact"><div><p class="eyebrow">Board report</p><h1>{{ board.name }}</h1><p class="muted">{{ board.core_profile }}{% if board.description %} · {{ board.description }}{% endif %}</p></div><a class="button secondary" href="{% url 'board-info' board.slug %}">Board info</a></section>
 <section class="panel filters">
   <form method="get"><label>Status<select name="status" onchange="this.form.submit()"><option value="">All statuses</option>{% for value,label in statuses %}<option value="{{ value }}">{{ label }}</option>{% endfor %}<option value="PASS" {% if selected_status == 'PASS' %}selected{% endif %}>Pass</option><option value="FAIL" {% if selected_status == 'FAIL' %}selected{% endif %}>Fail</option><option value="RUNNING" {% if selected_status == 'RUNNING' %}selected{% endif %}>Running</option><option value="UNSTABLE" {% if selected_status == 'UNSTABLE' %}selected{% endif %}>Unstable</option></select></label></form>
 </section>

@@ -22,6 +22,11 @@ class Board(models.Model):
     core_profile = models.CharField(max_length=120, blank=True)
     description = models.TextField(blank=True)
     enabled = models.BooleanField(default=True)
+    # Board info page content: {"sections": [{"title", "rows": [{"label", "value", "status",
+    # "source"}]}], "extensions": {"source", "items": [[name, version]]}, "boot_flows": [{"name",
+    # "status", "source", "steps": [...]}], "notes": [...]}. status is one of
+    # PROFILE_STATUSES. Edited by staff in the admin.
+    profile = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -31,6 +36,16 @@ class Board(models.Model):
 
     def get_absolute_url(self):
         return reverse("board-detail", kwargs={"slug": self.slug})
+
+
+# Evidence status of a board profile value, mapped to an existing badge style.
+PROFILE_STATUSES = {
+    "confirmed": "pass",  # vendor documentation or measured on the board
+    "configured": "running",  # what CI declares and tests, not a vendor claim
+    "deviation": "unstable",  # CI deliberately declares something the board does not claim
+    "unverified": "skipped",  # summary not yet checked by CI
+    "unknown": "skipped",
+}
 
 
 def elf_upload_path(instance, filename):

@@ -27,6 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .models import (
+    PROFILE_STATUSES,
     AnalysisColumn,
     AnalysisValue,
     Artifact,
@@ -276,6 +277,34 @@ def board_detail(request, slug):
         request,
         "results/board_detail.html",
         {"board": board, "runs": runs[:100], "selected_status": status},
+    )
+
+
+@login_required
+def board_info(request, slug):
+    board = get_object_or_404(Board, slug=slug)
+    profile = board.profile if isinstance(board.profile, dict) else {}
+
+    def badge(item):
+        status = str(item.get("status", "") or "unknown")
+        return {**item, "status": status, "badge": PROFILE_STATUSES.get(status, "skipped")}
+
+    sections = [
+        {"title": section.get("title", ""), "rows": [badge(row) for row in section.get("rows", [])]}
+        for section in profile.get("sections", [])
+    ]
+    boot_flows = [badge(flow) for flow in profile.get("boot_flows", [])]
+    return render(
+        request,
+        "results/board_info.html",
+        {
+            "board": board,
+            "sections": sections,
+            "extensions": profile.get("extensions", {}),
+            "boot_flows": boot_flows,
+            "notes": profile.get("notes", []),
+            "statuses": PROFILE_STATUSES,
+        },
     )
 
 
