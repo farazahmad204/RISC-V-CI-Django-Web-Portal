@@ -711,7 +711,7 @@ class PortalTests(TestCase):
     def test_login_and_header_show_10xengineers_logo(self):
         login = self.client.get(reverse("login"))
         self.assertContains(login, 'class="brand-logo large-logo"')
-        self.assertContains(login, "results/10xengineers-logo.png")
+        self.assertContains(login, "results/10xengineers-logo-white.png")
         self.assertNotContains(login, "Apollo validation services")
         self.assertNotContains(login, ">RV<")
         self.client.force_login(self.user)
