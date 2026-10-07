@@ -1,4 +1,5 @@
 {% extends "results/base.html" %}
+{% load static %}
 {% block title %}Run one ELF · {{ portal_name }}{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><span>Run ELF</span></nav>
@@ -6,21 +7,27 @@
 <section class="two-column upload-layout">
   <article class="panel">
     <h2>New execution</h2>
-    <p class="muted upload-note">The ELF must already be linked and configured for the selected board. The portal validates the ELF format, but it cannot validate its memory map.</p>
+    <p class="muted upload-note">The ELF must be linked for the selected board. The portal checks its load addresses against the board before anything is uploaded.</p>
     <form class="upload-form" method="post" enctype="multipart/form-data">
       {% csrf_token %}
       <label>Target board
-        <select name="board" required><option value="">Select a board</option>{% for board in boards %}<option value="{{ board.id }}">{{ board.name }}{% if board.core_profile %} — {{ board.core_profile }}{% endif %}</option>{% endfor %}</select>
+        <select name="board" required data-elf-board><option value="">Select a board</option>{% for row in board_rows %}<option value="{{ row.board.id }}"{% if row.state == "offline" %} disabled{% endif %}>{{ row.board.name }}{% if row.board.core_profile %} — {{ row.board.core_profile }}{% endif %} · {% if row.state == "online" %}Online{% elif row.state == "offline" %}Offline{% else %}Status unknown{% endif %}</option>{% endfor %}</select>
       </label>
       <label>RISC-V ELF
-        <input type="file" name="elf" accept=".elf,application/x-elf,application/octet-stream" required>
+        <input type="file" name="elf" accept=".elf,application/x-elf,application/octet-stream" required data-elf-file>
         <span>ELF64 little-endian RISC-V, up to {{ max_upload_mib }} MiB</span>
       </label>
-      <button class="button" type="submit">Upload and run</button>
+      <p class="elf-check" data-elf-result hidden></p>
+      <button class="button" type="submit" data-elf-submit>Upload and run</button>
     </form>
     {% if not boards %}<p class="alert">No supported boards are enabled. Ask an administrator to enable VF2 or BPI-F3.</p>{% endif %}
   </article>
-  <article class="panel"><h2>What happens next</h2><ol class="workflow-list"><li>Jenkins reserves the selected hardware.</li><li>The agent downloads and verifies this exact ELF.</li><li>The smart plug power-cycles the board and the runner receives the ELF over UART.</li><li>The UART result and complete log return to this portal.</li></ol></article>
+  <article class="panel table-panel board-status-panel"><h2>Board status</h2><table><thead><tr><th>Board</th><th>Status</th><th>Accepts ELFs at</th></tr></thead><tbody>{% for row in board_rows %}<tr><td>{% include "results/_board_link.html" with board=row.board %}</td><td><span class="badge {% if row.state == "online" %}status-pass{% elif row.state == "offline" %}status-fail{% else %}status-skipped{% endif %}">{% if row.state == "online" %}Online{% elif row.state == "offline" %}Offline{% else %}Unknown{% endif %}</span>{% if row.reason and row.state != "online" %}<br><span class="muted">{{ row.reason }}</span>{% endif %}{% if row.checked_at %}<br><span class="muted">Checked {{ row.checked_at|timesince }} ago</span>{% endif %}</td><td class="board-info-value">{% with rules=row.board.profile.elf_load_rules %}{% if rules %}{{ rules.window.0 }}–{{ rules.window.1 }}{% else %}—{% endif %}{% endwith %}</td></tr>{% empty %}<tr><td colspan="3" class="empty">No boards.</td></tr>{% endfor %}</tbody></table></article>
 </section>
+<section class="panel upload-next">
+  <article><h2>What happens next</h2><ol class="workflow-list"><li>Jenkins reserves the selected hardware.</li><li>The agent downloads and verifies this exact ELF.</li><li>The smart plug power-cycles the board and the runner receives the ELF over UART.</li><li>The UART result and complete log return to this portal.</li></ol></article>
+</section>
+{{ client_rules|json_script:"elf-board-rules" }}
+<script src="{% static 'results/elf_submit.js' %}?v=20261007c"></script>
 <section class="panel table-panel"><table><thead><tr><th>Uploaded</th><th>ELF</th><th>Board</th><th>Status</th><th>Result</th></tr></thead><tbody>{% for item in recent_submissions %}<tr data-href="{{ item.get_absolute_url }}"><td>{{ item.created_at|date:"M d, Y H:i:s" }}</td><td><strong>{{ item.original_name }}</strong><br><span class="muted">{{ item.size_bytes|filesizeformat }}</span></td><td>{% include "results/_board_link.html" with board=item.board %}</td><td><span class="badge status-{{ item.status|lower }}">{{ item.get_status_display }}</span></td><td>{% if item.run %}<a class="button secondary" href="{{ item.run.get_absolute_url }}">Build #{{ item.run.build_number }}</a>{% else %}Waiting{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="empty">You have not submitted an ELF yet.</td></tr>{% endfor %}</tbody></table></section>
 {% endblock %}

@@ -718,3 +718,124 @@ class PortalTests(TestCase):
         dashboard = self.client.get(reverse("dashboard"))
         self.assertContains(dashboard, 'alt="10xEngineers"')
         self.assertNotContains(dashboard, "Apollo")
+
+
+def _elf_loading_at(address, memsz=0x1000, name="case.elf"):
+    """Minimal RISC-V ELF64 with one PT_LOAD segment at address."""
+    import struct
+
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    header[4], header[5] = 2, 1
+    header[18:20] = (243).to_bytes(2, "little")
+    struct.pack_into("<Q", header, 0x20, 64)  # e_phoff
+    struct.pack_into("<HH", header, 0x36, 56, 1)  # e_phentsize, e_phnum
+    phdr = struct.pack("<IIQQQQQQ", 1, 5, 0x1000, address, address, 16, memsz, 0x1000)
+    return SimpleUploadedFile(
+        name, bytes(header) + phdr + b"\0" * 16, content_type="application/x-elf"
+    )
+
+
+MEGREZ_RULES = {"elf_load_rules": {"window": ["0x90000000", "0xB0000000"], "reserved": []}}
+VF2_RULES = {"elf_load_rules": {"window": ["0x80000000", "0x88000000"], "reserved": []}}
+
+
+class RunElfChecksTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        self.client.force_login(self.user)
+        self.megrez = Board.objects.create(
+            slug="milkv-megrez", name="Milk-V Megrez", profile=MEGREZ_RULES
+        )
+        self.vf2 = Board.objects.create(slug="visionfive2", name="VisionFive 2", profile=VF2_RULES)
+        self.settings_ctx = override_settings(
+            PORTAL_SINGLE_ELF_BOARD_SLUGS=("milkv-megrez", "visionfive2")
+        )
+        self.settings_ctx.enable()
+        self.addCleanup(self.settings_ctx.disable)
+
+    def _report(self, **boards):
+        from django.utils import timezone
+
+        payload = {
+            "checked_at": timezone.now().isoformat(),
+            "boards": [
+                {"slug": s, "online": on, "reason": "" if on else "no smart plug"}
+                for s, on in boards.items()
+            ],
+        }
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            return self.client.post(
+                reverse("api-board-health"),
+                data=json.dumps(payload),
+                content_type="application/json",
+                headers={"X-Portal-Token": "test-token"},
+            )
+
+    def test_health_endpoint_requires_token_and_updates_boards(self):
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            denied = self.client.post(
+                reverse("api-board-health"), data="{}", content_type="application/json"
+            )
+        self.assertEqual(denied.status_code, 401)
+        response = self._report(**{"milkv-megrez": True, "visionfive2": False})
+        self.assertEqual(sorted(response.json()["updated"]), ["milkv-megrez", "visionfive2"])
+        self.megrez.refresh_from_db()
+        self.vf2.refresh_from_db()
+        self.assertEqual(self.megrez.availability()["state"], "online")
+        self.assertEqual(self.vf2.availability()["state"], "offline")
+        self.assertEqual(self.vf2.availability()["reason"], "no smart plug")
+
+    def test_stale_or_missing_report_is_unknown(self):
+        self.assertEqual(self.megrez.availability()["state"], "unknown")
+        self.megrez.health = {"online": True, "checked_at": "2020-01-01T00:00:00+00:00"}
+        self.assertEqual(self.megrez.availability()["state"], "unknown")
+
+    def test_page_shows_status_and_disables_offline_boards(self):
+        self._report(**{"milkv-megrez": True, "visionfive2": False})
+        page = self.client.get(reverse("elf-submit"))
+        self.assertContains(page, "Milk-V Megrez")
+        self.assertContains(page, f'<option value="{self.vf2.id}" disabled>')
+        self.assertContains(page, "no smart plug")
+        self.assertContains(page, 'id="elf-board-rules"')
+        self.assertContains(page, "0x90000000")
+
+    def test_offline_board_is_rejected_before_upload(self):
+        self._report(**{"milkv-megrez": True, "visionfive2": False})
+        with patch("results.views._trigger_single_elf_job") as trigger:
+            response = self.client.post(
+                reverse("elf-submit"),
+                {"board": str(self.vf2.id), "elf": _elf_loading_at(0x80000000)},
+            )
+        self.assertContains(response, "VisionFive 2 is offline")
+        self.assertFalse(ElfSubmission.objects.exists())
+        trigger.assert_not_called()
+
+    def test_wrong_board_elf_is_rejected_before_upload(self):
+        self._report(**{"milkv-megrez": True, "visionfive2": True})
+        with patch("results.views._trigger_single_elf_job") as trigger:
+            response = self.client.post(
+                reverse("elf-submit"),
+                {"board": str(self.megrez.id), "elf": _elf_loading_at(0x80000000)},
+            )
+        self.assertContains(response, "does not fit Milk-V Megrez")
+        self.assertContains(response, "It looks built for VisionFive 2")
+        self.assertFalse(ElfSubmission.objects.exists())
+        trigger.assert_not_called()
+
+    def test_matching_elf_is_queued(self):
+        self._report(**{"milkv-megrez": True})
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            override_settings(MEDIA_ROOT=Path(temporary)),
+            patch(
+                "results.views._trigger_single_elf_job", return_value="https://jenkins/queue/1/"
+            ) as trigger,
+        ):
+            response = self.client.post(
+                reverse("elf-submit"),
+                {"board": str(self.megrez.id), "elf": _elf_loading_at(0x90000000)},
+            )
+            submission = ElfSubmission.objects.get()
+            self.assertRedirects(response, submission.get_absolute_url())
+        trigger.assert_called_once()

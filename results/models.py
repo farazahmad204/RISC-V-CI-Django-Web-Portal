@@ -25,8 +25,12 @@ class Board(models.Model):
     # Board info page content: {"sections": [{"title", "rows": [{"label", "value", "status",
     # "source"}]}], "extensions": {"source", "items": [[name, version]]}, "boot_flows": [{"name",
     # "status", "source", "steps": [...]}], "notes": [...]}. status is one of
-    # PROFILE_STATUSES. Edited by staff in the admin.
+    # PROFILE_STATUSES. Edited by staff in the admin. "elf_load_rules" ({"window": [start, end],
+    # "reserved": [[start, end, label]]}) is what Run ELF accepts for this board.
     profile = models.JSONField(default=dict, blank=True)
+    # Last report of the board-health job on the hardware agent:
+    # {"online": bool, "reason": str, "checks": {...}, "checked_at": ISO-8601}.
+    health = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -36,6 +40,24 @@ class Board(models.Model):
 
     def get_absolute_url(self):
         return reverse("board-detail", kwargs={"slug": self.slug})
+
+    def availability(self, stale_after_minutes=30):
+        """Online/offline for Run ELF; "unknown" when no recent health report exists."""
+        import datetime
+
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        health = self.health if isinstance(self.health, dict) else {}
+        checked = parse_datetime(str(health.get("checked_at", ""))) if health else None
+        if checked is None:
+            return {"state": "unknown", "reason": "No health report yet", "checked_at": None}
+        if timezone.is_naive(checked):
+            checked = timezone.make_aware(checked, datetime.timezone.utc)
+        if timezone.now() - checked > datetime.timedelta(minutes=stale_after_minutes):
+            return {"state": "unknown", "reason": "No recent health report", "checked_at": checked}
+        state = "online" if health.get("online") else "offline"
+        return {"state": state, "reason": str(health.get("reason", "")), "checked_at": checked}
 
 
 # Evidence status of a board profile value, mapped to an existing badge style.

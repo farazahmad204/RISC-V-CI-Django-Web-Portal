@@ -11,3 +11,36 @@
 .message { background: var(--surface2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
 .message.success { border-color: rgba(71, 209, 140, .35); color: var(--green); }
 .message.error { border-color: rgba(255, 107, 120, .35); color: var(--red); }
+
+/* Run ELF: board check message and board status table */
+.elf-check {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.elf-check-ok {
+  color: var(--green);
+  background: rgba(71, 209, 140, 0.08);
+  border: 1px solid rgba(71, 209, 140, 0.35);
+}
+
+.elf-check-error {
+  color: var(--red);
+  background: rgba(255, 107, 120, 0.1);
+  border: 1px solid rgba(255, 107, 120, 0.3);
+}
+
+.upload-form button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.board-status-panel h2 {
+  padding: 18px 20px 0;
+}
+
+.upload-next {
+  margin-bottom: 16px;
+}
