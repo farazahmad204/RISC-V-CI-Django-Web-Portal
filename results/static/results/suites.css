@@ -532,3 +532,34 @@
   line-height: 1.2;
   text-wrap: balance;
 }
+
+/* Board names link to the board info page */
+.board-link {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+}
+
+.board-link:hover,
+.board-link:focus-visible {
+  color: var(--cyan);
+  text-decoration-color: var(--cyan);
+}
+
+/* Dashboard card: the whole card opens the runs page; the name opens board info */
+.board-card {
+  position: relative;
+}
+
+.board-card-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.board-card .board-link {
+  position: relative;
+  z-index: 2;
+}

@@ -20,9 +20,10 @@
 <div class="section-heading"><div><p class="eyebrow">Compute fleet</p><h2>Boards</h2></div></div>
 <section class="board-grid">
   {% for board in boards %}
-  <a class="board-card" href="{{ board.get_absolute_url }}">
+  <article class="board-card">
+    <a class="board-card-cover" href="{{ board.get_absolute_url }}" aria-label="{{ board.name }} runs"></a>
     <div class="board-card-head">
-      <div><span class="board-icon">{{ board.name|slice:":1" }}</span><h3>{{ board.name }}</h3></div>
+      <div><span class="board-icon">{{ board.name|slice:":1" }}</span><h3>{% include "results/_board_link.html" with board=board %}</h3></div>
       {% if board.latest_run %}<span class="badge status-{{ board.latest_run.status|lower }}">{{ board.latest_run.get_status_display }}</span>{% else %}<span class="badge">No runs</span>{% endif %}
     </div>
     <p>{{ board.core_profile|default:"Core profile not recorded" }}</p>
@@ -41,7 +42,7 @@
       {% endfor %}
     </div>
     {% else %}<p class="empty">Waiting for the first published result.</p>{% endif %}
-  </a>
+  </article>
   {% empty %}<div class="empty-panel">No boards have been configured.</div>{% endfor %}
 </section>
 
@@ -52,7 +53,7 @@
     <tbody>
       {% for run in recent_runs %}
       <tr data-href="{{ run.get_absolute_url }}">
-        <td><strong>{{ run.job.board.name }}</strong></td><td>{{ run.job.name }}</td><td>#{{ run.build_number }}</td>
+        <td><strong>{% include "results/_board_link.html" with board=run.job.board %}</strong></td><td>{{ run.job.name }}</td><td>#{{ run.build_number }}</td>
         <td><span class="badge status-{{ run.status|lower }}">{{ run.get_status_display }}</span></td>
         <td>{{ run.passed_cases }} / {{ run.expected_cases }}</td><td>{{ run.pass_percent }}%</td><td>{{ run.started_at|date:"M d, Y H:i"|default:"—" }}</td>
         {% if request.user.is_staff %}<td class="run-action-cell"><button class="run-remove-button" type="button" data-dialog-open="delete-dashboard-run-{{ run.id }}" title="Remove {{ run.job.name }} build #{{ run.build_number }} from the portal" aria-label="Remove {{ run.job.name }} build #{{ run.build_number }} from the portal">&times;</button></td>{% endif %}
