@@ -22,10 +22,12 @@ from django.db.models import Count, Max, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from .elf_check import ElfCheckError, board_rules, check_elf_for_board
 from .models import (
     PROFILE_STATUSES,
     AnalysisColumn,
@@ -138,7 +140,14 @@ def elf_submit(request):
         try:
             if board is None:
                 raise ValueError("Select a supported board.")
+            availability = board.availability()
+            if availability["state"] == "offline":
+                raise ValueError(
+                    f"{board.name} is offline ({availability['reason']}); nothing was uploaded."
+                )
             original_name, sha256 = _uploaded_elf_details(upload)
+            check_elf_for_board(upload.read(), board, boards)
+            upload.seek(0)
             raw_token = secrets.token_urlsafe(32)
             submission = ElfSubmission.objects.create(
                 uploaded_by=request.user,
@@ -158,7 +167,7 @@ def elf_submit(request):
                 submission.elf.delete(save=False)
                 submission.delete()
                 raise
-        except (ValueError, RuntimeError, HTTPError, URLError, OSError) as exc:
+        except (ValueError, ElfCheckError, RuntimeError, HTTPError, URLError, OSError) as exc:
             messages.error(request, str(exc))
         else:
             messages.success(request, "ELF queued for execution.")
@@ -167,11 +176,28 @@ def elf_submit(request):
     recent = ElfSubmission.objects.filter(uploaded_by=request.user).select_related("board", "run")[
         :20
     ]
+    board_rows = []
+    client_rules = {}
+    for board in boards:
+        availability = board.availability()
+        board_rows.append({"board": board, **availability})
+        rules = board_rules(board)
+        if rules:
+            client_rules[str(board.id)] = {
+                "name": board.name,
+                "window": [f"0x{v:08X}" for v in rules["window"]],
+                "reserved": [
+                    [f"0x{a:08X}", f"0x{b:08X}", label] for a, b, label in rules["reserved"]
+                ],
+                "state": availability["state"],
+            }
     return render(
         request,
         "results/elf_submit.html",
         {
             "boards": boards,
+            "board_rows": board_rows,
+            "client_rules": client_rules,
             "recent_submissions": recent,
             "max_upload_mib": settings.PORTAL_ELF_UPLOAD_MAX_BYTES // (1024 * 1024),
         },
@@ -642,6 +668,38 @@ def _authorized(request):
     configured = settings.PORTAL_INGEST_TOKEN
     supplied = request.headers.get("X-Portal-Token", "")
     return bool(configured and supplied and secrets.compare_digest(configured, supplied))
+
+
+@csrf_exempt
+@require_POST
+def ingest_board_health(request):
+    """Board availability reported by the board-health job on the hardware agent."""
+    if not _authorized(request):
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    try:
+        payload = json.loads(request.body)
+        checked_at = str(payload.get("checked_at") or timezone.now().isoformat())
+        reports = payload["boards"]
+        if not isinstance(reports, list):
+            raise TypeError
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return JsonResponse({"error": "invalid payload"}, status=400)
+    updated = []
+    for item in reports:
+        if not isinstance(item, dict) or not item.get("slug"):
+            continue
+        board = Board.objects.filter(slug=str(item["slug"])).first()
+        if board is None:
+            continue
+        board.health = {
+            "online": bool(item.get("online")),
+            "reason": str(item.get("reason", ""))[:300],
+            "checks": item.get("checks", {}) if isinstance(item.get("checks"), dict) else {},
+            "checked_at": checked_at,
+        }
+        board.save(update_fields=["health"])
+        updated.append(board.slug)
+    return JsonResponse({"updated": updated})
 
 
 @csrf_exempt
