@@ -707,3 +707,14 @@ class PortalTests(TestCase):
         for url in pages:
             with self.subTest(url=url):
                 self.assertContains(self.client.get(url), link)
+
+    def test_login_and_header_show_10xengineers_logo(self):
+        login = self.client.get(reverse("login"))
+        self.assertContains(login, 'class="brand-logo large-logo"')
+        self.assertContains(login, "results/10xengineers-logo.png")
+        self.assertNotContains(login, "Apollo validation services")
+        self.assertNotContains(login, ">RV<")
+        self.client.force_login(self.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, 'alt="10xEngineers"')
+        self.assertNotContains(dashboard, "Apollo")

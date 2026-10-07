@@ -563,3 +563,20 @@
   position: relative;
   z-index: 2;
 }
+
+/* 10xEngineers logo (dark-blue artwork on a light tile so it reads on the dark theme) */
+.brand-logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  padding: 4px 7px;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.login-card .large-logo {
+  height: 64px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  margin-bottom: 4px;
+}
