@@ -673,3 +673,37 @@ class PortalTests(TestCase):
         self.assertContains(dashboard, f'<span class="brand-name">{name}</span>', html=False)
         self.assertContains(dashboard, f"<title>Dashboard · {name}</title>", html=False)
         self.assertNotContains(dashboard, "RISC-V CI Portal")
+
+    def test_board_names_link_to_board_info(self):
+        board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        job = JenkinsJob.objects.create(board=board, name="megrez-uart-weekly")
+        run = TestRun.objects.create(job=job, build_number=5)
+        submission = ElfSubmission.objects.create(
+            uploaded_by=self.user,
+            board=board,
+            elf="elf-uploads/case.elf",
+            original_name="case.elf",
+            sha256="0" * 64,
+            size_bytes=64,
+            download_token_hash="",
+        )
+        info_url = reverse("board-info", args=[board.slug])
+        link = f'<a class="board-link" href="{info_url}"'
+        self.client.force_login(self.user)
+
+        dashboard = self.client.get(reverse("dashboard"))
+        # Card name and recent-runs row link to board info; the card still opens the runs page.
+        self.assertGreaterEqual(dashboard.content.decode().count(link), 2)
+        cover = f'class="board-card-cover" href="{board.get_absolute_url()}"'
+        self.assertContains(dashboard, cover)
+        self.assertNotContains(dashboard, '<a class="board-card"')
+        pages = [
+            board.get_absolute_url(),
+            run.get_absolute_url(),
+            reverse("run-workbook", args=[board.slug, job.name, run.build_number]),
+            reverse("elf-submission-detail", args=[submission.id]),
+            reverse("elf-submit"),
+        ]
+        for url in pages:
+            with self.subTest(url=url):
+                self.assertContains(self.client.get(url), link)
