@@ -1,5 +1,5 @@
 {% extends "results/base.html" %}
-{% block title %}{{ submission.original_name }} · RISC-V CI Portal{% endblock %}
+{% block title %}{{ submission.original_name }} · {{ portal_name }}{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{% url 'elf-submit' %}">Run ELF</a><span>/</span><span>{{ submission.original_name }}</span></nav>
 <section class="hero compact"><div><p class="eyebrow">Single ELF execution</p><h1>{{ submission.original_name }}</h1><p class="muted">Submitted {{ submission.created_at|date:"M d, Y H:i:s" }} for {{ submission.board.name }}</p></div><span class="badge large status-{{ submission.status|lower }}">{{ submission.get_status_display }}</span></section>

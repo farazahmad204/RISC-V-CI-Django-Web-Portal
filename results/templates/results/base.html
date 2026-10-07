@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}RISC-V CI Portal{% endblock %}</title>
+  <title>{% block title %}{{ portal_name }}{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'results/portal.css' %}">
   <link rel="stylesheet" href="{% static 'results/suites.css' %}">
   <link rel="stylesheet" href="{% static 'results/elf_upload.css' %}">
@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="{% url 'dashboard' %}">
       <span class="brand-mark">RV</span>
-      <span>RISC-V CI Portal</span>
+      <span class="brand-name">{{ portal_name }}</span>
     </a>
     <nav>
       <a href="{% url 'dashboard' %}">Dashboard</a>

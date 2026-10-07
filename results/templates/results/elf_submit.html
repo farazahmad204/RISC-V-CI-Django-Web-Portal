@@ -1,5 +1,5 @@
 {% extends "results/base.html" %}
-{% block title %}Run one ELF · RISC-V CI Portal{% endblock %}
+{% block title %}Run one ELF · {{ portal_name }}{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><span>Run ELF</span></nav>
 <section class="hero compact"><div><p class="eyebrow">Hardware execution</p><h1>Run one ELF</h1><p class="muted">Upload a board-compatible RISC-V ELF and execute it over UART.</p></div></section>

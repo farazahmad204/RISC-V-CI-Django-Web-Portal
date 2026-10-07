@@ -1,4 +1,4 @@
-# RISC-V CI Results Portal
+# RISC-V Architectural Compliance & Post-Silicon Regression Platform
 
 Dynamic reporting for ACT executions on VisionFive 2, Banana Pi F3, and future RISC-V boards. The same source tree runs locally with SQLite and on Apollo with PostgreSQL.
 
