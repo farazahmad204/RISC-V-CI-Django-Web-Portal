@@ -512,3 +512,23 @@
     border: 0;
   }
 }
+
+/* Platform name in the top bar: wraps to two lines instead of crowding the menu */
+.brand-name {
+  max-width: 440px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+@media (max-width: 760px) {
+  .brand-name {
+    max-width: 220px;
+    font-size: 12px;
+  }
+}
+
+.login-card h1 {
+  font-size: 25px;
+  line-height: 1.2;
+  text-wrap: balance;
+}

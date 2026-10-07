@@ -662,3 +662,14 @@ class PortalTests(TestCase):
         edited.refresh_from_db()
         self.assertEqual(empty.profile["sections"][0]["title"], "Identity")
         self.assertEqual(edited.profile, {"notes": ["x"]})
+
+    def test_platform_name_appears_in_header_title_and_login(self):
+        name = "RISC-V Architectural Compliance &amp; Post-Silicon Regression Platform"
+        login = self.client.get(reverse("login"))
+        self.assertContains(login, f"<title>Sign in · {name}</title>", html=False)
+        self.assertContains(login, f"<h1>{name}</h1>", html=False)
+        self.client.force_login(self.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, f'<span class="brand-name">{name}</span>', html=False)
+        self.assertContains(dashboard, f"<title>Dashboard · {name}</title>", html=False)
+        self.assertNotContains(dashboard, "RISC-V CI Portal")

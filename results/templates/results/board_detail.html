@@ -1,5 +1,5 @@
 {% extends "results/base.html" %}
-{% block title %}{{ board.name }} · RISC-V CI Portal{% endblock %}
+{% block title %}{{ board.name }} · {{ portal_name }}{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><span>{{ board.name }}</span></nav>
 <section class="hero compact"><div><p class="eyebrow">Board report</p><h1>{{ board.name }}</h1><p class="muted">{{ board.core_profile }}{% if board.description %} · {{ board.description }}{% endif %}</p></div><a class="button secondary" href="{% url 'board-info' board.slug %}">Board info</a></section>

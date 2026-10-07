@@ -50,6 +50,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "results.context_processors.portal",
             ],
         },
     }
@@ -113,6 +114,9 @@ JENKINS_TRIGGER_URL = os.getenv("JENKINS_TRIGGER_URL", "")
 JENKINS_TRIGGER_USER = os.getenv("JENKINS_TRIGGER_USER", "")
 JENKINS_TRIGGER_TOKEN = os.getenv("JENKINS_TRIGGER_TOKEN", "")
 JENKINS_SINGLE_ELF_JOB = os.getenv("JENKINS_SINGLE_ELF_JOB", "riscv-uart-single-elf")
+PORTAL_NAME = os.getenv(
+    "PORTAL_NAME", "RISC-V Architectural Compliance & Post-Silicon Regression Platform"
+)
 JENKINS_CA_FILE = os.getenv("JENKINS_CA_FILE", "")
 PORTAL_EXTERNAL_URL = os.getenv("PORTAL_EXTERNAL_URL", "")
 

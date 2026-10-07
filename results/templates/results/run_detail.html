@@ -1,5 +1,5 @@
 {% extends "results/base.html" %}
-{% block title %}{{ run.job.board.name }} #{{ run.build_number }} · RISC-V CI Portal{% endblock %}
+{% block title %}{{ run.job.board.name }} #{{ run.build_number }} · {{ portal_name }}{% endblock %}
 {% block content %}
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{{ run.job.board.get_absolute_url }}">{{ run.job.board.name }}</a><span>/</span><span>Build #{{ run.build_number }}</span></nav>
 <section class="hero compact"><div><p class="eyebrow">{{ run.job.name }}</p><h1>Build #{{ run.build_number }}</h1><p class="muted">Updated {{ run.updated_at|date:"M d, Y H:i:s" }}</p></div><span class="badge large status-{{ run.status|lower }}">{{ run.get_status_display }}</span></section>
