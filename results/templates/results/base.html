@@ -5,14 +5,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ portal_name }}{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'results/portal.css' %}">
-  <link rel="stylesheet" href="{% static 'results/suites.css' %}">
-  <link rel="stylesheet" href="{% static 'results/elf_upload.css' %}">
+  <link rel="stylesheet" href="{% static 'results/portal.css' %}?v=20261007b">
+  <link rel="stylesheet" href="{% static 'results/suites.css' %}?v=20261007b">
+  <link rel="stylesheet" href="{% static 'results/elf_upload.css' %}?v=20261007b">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="{% url 'dashboard' %}">
-      <img class="brand-logo" src="{% static 'results/10xengineers-logo.png' %}" alt="10xEngineers">
+      <img class="brand-logo" src="{% static 'results/10xengineers-logo-white.png' %}" alt="10xEngineers" width="65" height="40">
       <span class="brand-name">{{ portal_name }}</span>
     </a>
     <nav>
