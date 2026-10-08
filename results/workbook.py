@@ -77,20 +77,24 @@ def ensure_verdict_column(run):
     return column
 
 
-# Hardware-status filter of the test table: value -> label.
+# Hardware-status filter of the test table: value -> label. Failures are what people review,
+# so the page opens on them; "ALL" shows every test.
 STATUS_FILTERS = {
-    "": "All statuses",
     "FAIL": "Failed",
+    "ALL": "All statuses",
     "PASS": "Passed",
     "NOT_RUN": "Not run",
 }
+DEFAULT_STATUS = "FAIL"
+# Analysis columns shown right after the hardware result instead of after the run columns.
+FRONT_COLUMN_KEYS = ("ai_analysis", VERDICT_KEY)
 
 
 def _page_query(suite, status, query):
     params = {}
     if suite != "All":
         params["suite"] = suite
-    if status:
+    if status != DEFAULT_STATUS:
         params["status"] = status
     if query:
         params["q"] = query
@@ -103,18 +107,18 @@ def _selection(request):
     suite = data.get("suite") or "All"
     if suite not in ("All", *SUITE_CATEGORIES):
         suite = "All"
-    status = str(data.get("status", "")).upper()
+    status = str(data.get("status") or DEFAULT_STATUS).upper()
     if data.get("show") == "failed":  # links to the old workbook page
         status = "FAIL"
     if status not in STATUS_FILTERS:
-        status = ""
+        status = DEFAULT_STATUS
     return suite, status, str(data.get("q", "")).strip()[:100]
 
 
 def _matches_status(result, status):
     if status == "NOT_RUN":
         return result.hardware_status not in (Status.PASS, Status.FAIL)
-    return not status or result.hardware_status == status
+    return status == "ALL" or result.hardware_status == status
 
 
 def _suite_summary(results):
@@ -185,6 +189,17 @@ def run_page(request, slug, job_name, build_number):
     ]
 
     columns = list(run.analysis_columns.order_by("position", "id"))
+    front = sorted(
+        (c for c in columns if c.key in FRONT_COLUMN_KEYS),
+        key=lambda c: FRONT_COLUMN_KEYS.index(c.key),
+    )
+    rest = [c for c in columns if c.key not in FRONT_COLUMN_KEYS]
+    rows = _matrix(shown, front + rest)
+    for row in rows:
+        row["front_cells"], row["rest_cells"] = (
+            row["cells"][: len(front)],
+            row["cells"][len(front) :],
+        )
     metadata = run.metadata or {}
     triage = metadata.get("triage") or {}
     return render(
@@ -192,10 +207,13 @@ def run_page(request, slug, job_name, build_number):
         "results/run_detail.html",
         {
             "run": run,
-            "matrix_rows": _matrix(shown, columns),
+            "matrix_rows": rows,
             "shown_count": len(shown),
             "total_count": len(results),
+            "failed_count": sum(r.hardware_status == Status.FAIL for r in results),
             "columns": columns,
+            "front_columns": front,
+            "rest_columns": rest,
             "can_edit": _can_manage_analysis(request.user),
             "selected_suite": selected_suite,
             "selected_status": selected_status,
@@ -219,6 +237,8 @@ def run_workbook(request, slug, job_name, build_number):
     run = _run_for_job(slug, job_name, build_number)
     _require_run_access(request.user, run)
     suite, status, query = _selection(request)
+    if "status" not in request.GET and request.GET.get("show") != "failed":
+        status = "ALL"  # the old workbook showed every test unless "failures only" was set
     return redirect(run.get_absolute_url() + _page_query(suite, status, query))
 
 
