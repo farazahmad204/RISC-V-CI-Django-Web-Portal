@@ -1,6 +1,7 @@
-"""Run workbook: locked Jenkins results next to editable failure-analysis columns.
+"""Build run page: run details, test results, logs and the failure-analysis workbook.
 
-Sail, Spike and hardware results are what Jenkins measured and are never edited here.
+One page per run (the run-detail URL; the old workbook URL redirects to it). Sail, Spike and
+hardware results are what Jenkins measured and are never edited here.
 Analysis columns (the Verdict, the triage columns and any column a person adds) are
 stored separately in AnalysisColumn/AnalysisValue.
 """
@@ -16,7 +17,6 @@ from django.db import transaction
 from django.db.models import Max
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.text import slugify
@@ -76,21 +76,44 @@ def ensure_verdict_column(run):
     return column
 
 
-def _workbook_query(suite, failed_only):
+# Hardware-status filter of the test table: value -> label.
+STATUS_FILTERS = {
+    "": "All statuses",
+    "FAIL": "Failed",
+    "PASS": "Passed",
+    "NOT_RUN": "Not run",
+}
+
+
+def _page_query(suite, status, query):
     params = {}
     if suite != "All":
         params["suite"] = suite
-    if failed_only:
-        params["show"] = "failed"
+    if status:
+        params["status"] = status
+    if query:
+        params["q"] = query
     return f"?{urlencode(params)}" if params else ""
 
 
 def _selection(request):
-    suite = request.GET.get("suite") or request.POST.get("suite") or "All"
+    """Suite tab, status filter and search text, from the query string or a posted form."""
+    data = request.POST if request.method == "POST" else request.GET
+    suite = data.get("suite") or "All"
     if suite not in ("All", *SUITE_CATEGORIES):
         suite = "All"
-    failed_only = (request.GET.get("show") or request.POST.get("show")) == "failed"
-    return suite, failed_only
+    status = str(data.get("status", "")).upper()
+    if data.get("show") == "failed":  # links to the old workbook page
+        status = "FAIL"
+    if status not in STATUS_FILTERS:
+        status = ""
+    return suite, status, str(data.get("q", "")).strip()[:100]
+
+
+def _matches_status(result, status):
+    if status == "NOT_RUN":
+        return result.hardware_status not in (Status.PASS, Status.FAIL)
+    return not status or result.hardware_status == status
 
 
 def _suite_summary(results):
@@ -133,52 +156,74 @@ def _results(run):
 
 
 @login_required
-def run_workbook(request, slug, job_name, build_number):
+def run_page(request, slug, job_name, build_number):
     run = _run_for_job(slug, job_name, build_number)
     _require_run_access(request.user, run)
-    selected_suite, failed_only = _selection(request)
+    selected_suite, selected_status, query = _selection(request)
     ensure_verdict_column(run)
 
     results = _results(run)
-    suites = ("All", *SUITE_CATEGORIES)
-    summary_rows = []
-    for suite in suites:
-        in_suite = (
-            results if suite == "All" else [r for r in results if r.test_case.category == suite]
-        )
-        summary_rows.append({"name": suite, **_suite_summary(in_suite)})
-    if selected_suite != "All":
-        results = [r for r in results if r.test_case.category == selected_suite]
-    if failed_only:
-        results = [r for r in results if r.hardware_status == Status.FAIL]
+    present = [
+        suite for suite in SUITE_CATEGORIES if any(r.test_case.category == suite for r in results)
+    ]
+    if len(present) < 2:
+        present = []  # one suite: its card and tab would repeat "All"
+    suites = ("All", *present)
+    if selected_suite not in suites:
+        selected_suite = "All"
+    summary_rows = [{"name": "All", **_suite_summary(results)}] + [
+        {"name": suite, **_suite_summary([r for r in results if r.test_case.category == suite])}
+        for suite in present
+    ]
+    shown = [
+        r
+        for r in results
+        if (selected_suite == "All" or r.test_case.category == selected_suite)
+        and _matches_status(r, selected_status)
+        and (not query or query.lower() in r.test_case.name.lower())
+    ]
 
     columns = list(run.analysis_columns.order_by("position", "id"))
-    triage = (run.metadata or {}).get("triage") or {}
+    metadata = run.metadata or {}
+    triage = metadata.get("triage") or {}
     return render(
         request,
-        "results/run_workbook.html",
+        "results/run_detail.html",
         {
             "run": run,
-            "matrix_rows": _matrix(results, columns),
+            "matrix_rows": _matrix(shown, columns),
+            "shown_count": len(shown),
+            "total_count": len(results),
             "columns": columns,
             "can_edit": _can_manage_analysis(request.user),
             "selected_suite": selected_suite,
-            "failed_only": failed_only,
+            "selected_status": selected_status,
+            "query": query,
+            "status_filters": STATUS_FILTERS.items(),
             "suites": suites,
             "summary_rows": summary_rows,
+            "artifacts": list(run.artifacts.all()),
+            "build_url": str(metadata.get("build_url") or ""),
             "verdict_choices": list(VERDICT_CHOICES),
             "triage_published_at": parse_datetime(str(triage.get("published_at", ""))),
             "triage_failures": triage.get("failures"),
             "triage_ai_model": triage.get("ai_model", ""),
-            "current_query": _workbook_query(selected_suite, failed_only),
         },
     )
 
 
+@login_required
+def run_workbook(request, slug, job_name, build_number):
+    """The workbook is part of the run page now; keep old links working."""
+    run = _run_for_job(slug, job_name, build_number)
+    _require_run_access(request.user, run)
+    suite, status, query = _selection(request)
+    return redirect(run.get_absolute_url() + _page_query(suite, status, query))
+
+
 def _workbook_redirect(request, run):
-    suite, failed_only = _selection(request)
-    url = reverse("run-workbook", args=[run.job.board.slug, run.job.name, run.build_number])
-    return redirect(url + _workbook_query(suite, failed_only))
+    suite, status, query = _selection(request)
+    return redirect(run.get_absolute_url() + _page_query(suite, status, query))
 
 
 def _editable_run(request, slug, job_name, build_number):
@@ -473,9 +518,7 @@ def ingest_triage(request):
         run.save(update_fields=["metadata"])
     return JsonResponse(
         {
-            "url": reverse(
-                "run-workbook", args=[run.job.board.slug, run.job.name, run.build_number]
-            ),
+            "url": run.get_absolute_url(),
             "updated_cells": updated,
             "kept_person_edits": kept,
             "unknown_tests": unknown[:50],
