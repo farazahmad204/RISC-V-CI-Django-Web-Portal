@@ -119,6 +119,9 @@ PORTAL_NAME = os.getenv(
 )
 JENKINS_CA_FILE = os.getenv("JENKINS_CA_FILE", "")
 PORTAL_EXTERNAL_URL = os.getenv("PORTAL_EXTERNAL_URL", "")
+# Where browsers reach Jenkins. Blank: the host the portal was opened on (Jenkins and the portal
+# share one web server), so stored links to an older Jenkins address still work.
+JENKINS_PUBLIC_URL = os.getenv("JENKINS_PUBLIC_URL", "")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)

@@ -32,6 +32,7 @@ from .models import (
     Status,
     TestResult,
     TestRun,
+    jenkins_link,
 )
 from .views import SUITE_CATEGORIES, _authorized, _require_run_access, _run_for_job
 from .xlsx import build_xlsx
@@ -203,7 +204,7 @@ def run_page(request, slug, job_name, build_number):
             "suites": suites,
             "summary_rows": summary_rows,
             "artifacts": list(run.artifacts.all()),
-            "build_url": str(metadata.get("build_url") or ""),
+            "build_url": jenkins_link(str(metadata.get("build_url") or "")),
             "verdict_choices": list(VERDICT_CHOICES),
             "triage_published_at": parse_datetime(str(triage.get("published_at", ""))),
             "triage_failures": triage.get("failures"),

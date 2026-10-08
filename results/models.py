@@ -1,8 +1,24 @@
 import uuid
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
+
+
+def jenkins_link(url):
+    """A stored Jenkins URL (build, artifact, log or queue item) on today's Jenkins address.
+
+    Runs keep the address Jenkins had when they were published (Apollo, a temporary IP...).
+    The job/queue path stays valid after a move, so only the host is replaced.
+    """
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.path.startswith(("/job/", "/queue/")):
+        return url
+    tail = parts.path + (f"?{parts.query}" if parts.query else "")
+    return settings.JENKINS_PUBLIC_URL.rstrip("/") + tail
 
 
 class Status(models.TextChoices):
@@ -107,6 +123,10 @@ class ElfSubmission(models.Model):
 
     def get_absolute_url(self):
         return reverse("elf-submission-detail", kwargs={"submission_id": self.id})
+
+    @property
+    def jenkins_queue_link(self):
+        return jenkins_link(self.jenkins_queue_url)
 
 
 class JenkinsJob(models.Model):
@@ -216,7 +236,7 @@ class TestResult(models.Model):
         if not self.log_path:
             return ""
         if self.log_path.startswith(("http://", "https://")):
-            return self.log_path
+            return jenkins_link(self.log_path)
         return reverse("test-uart-download", args=[self.id])
 
 
@@ -237,6 +257,10 @@ class Artifact(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def link(self):
+        return jenkins_link(self.external_url)
 
 
 # Workbook columns the portal creates itself, keyed by AnalysisColumn.key. People can rename,

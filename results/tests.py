@@ -1149,7 +1149,7 @@ class UnifiedRunPageTests(TestCase):
             "Run details &amp; artifacts",
             "summary.md",
             "0.14.1",
-            "https://jenkins/job/vf2-uart-weekly/9/",
+            'href="/job/vf2-uart-weekly/9/"',
             "Download Triage Report",
             "ExceptionsS-00",
             "https://jenkins/artifact/uart.log",
@@ -1175,3 +1175,49 @@ class UnifiedRunPageTests(TestCase):
         self.assertContains(searched, "I-add-01")
         self.assertNotContains(searched, "ExceptionsS-00")
         self.assertContains(searched, "Showing 1 of 2 tests")
+
+
+class JenkinsLinkTests(TestCase):
+    def test_stored_jenkins_links_follow_the_current_address(self):
+        from .models import jenkins_link
+
+        old = "https://192.168.50.95/job/megrez-uart-weekly/5/"
+        self.assertEqual(jenkins_link(old), "/job/megrez-uart-weekly/5/")
+        self.assertEqual(
+            jenkins_link("https://apollo/job/x/3/artifact/logs/a%20b.log?raw=1"),
+            "/job/x/3/artifact/logs/a%20b.log?raw=1",
+        )
+        self.assertEqual(jenkins_link("https://apollo/queue/item/42/"), "/queue/item/42/")
+        self.assertEqual(jenkins_link("https://github.com/org/repo"), "https://github.com/org/repo")
+        self.assertEqual(jenkins_link(""), "")
+        with override_settings(JENKINS_PUBLIC_URL="https://110.93.227.10:9123/"):
+            self.assertEqual(
+                jenkins_link(old), "https://110.93.227.10:9123/job/megrez-uart-weekly/5/"
+            )
+
+    def test_run_page_rewrites_build_artifact_and_log_links(self):
+        user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        job = JenkinsJob.objects.create(board=board, name="megrez-uart-weekly")
+        run = TestRun.objects.create(
+            job=job,
+            build_number=5,
+            metadata={"build_url": "https://192.168.50.95/job/megrez-uart-weekly/5/"},
+        )
+        TestResult.objects.create(
+            run=run,
+            test_case=ACTTestCase.objects.create(name="H_trap-00"),
+            log_path="https://192.168.50.95/job/megrez-uart-weekly/5/artifact/h.log",
+        )
+        Artifact.objects.create(
+            run=run,
+            name="summary.md",
+            relative_path="summary.md",
+            external_url="https://192.168.50.95/job/megrez-uart-weekly/5/artifact/summary.md",
+        )
+        self.client.force_login(user)
+        page = self.client.get(run.get_absolute_url())
+        self.assertNotContains(page, "192.168.50.95")
+        self.assertContains(page, 'href="/job/megrez-uart-weekly/5/"')
+        self.assertContains(page, 'href="/job/megrez-uart-weekly/5/artifact/h.log"')
+        self.assertContains(page, 'href="/job/megrez-uart-weekly/5/artifact/summary.md"')
