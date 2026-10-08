@@ -2,6 +2,24 @@
 // Execution results are not editable.
 (() => {
   const table = document.querySelector("table[data-workbook][data-save-url]");
+  // A second horizontal scrollbar above the table, kept in step with the table's own one.
+  const mirror = document.querySelector("[data-scroll-mirror]");
+  const source = document.querySelector("[data-scroll-source]");
+  if (mirror && source) {
+    const spacer = mirror.firstElementChild;
+    const size = () => {
+      spacer.style.width = `${source.scrollWidth}px`;
+      mirror.hidden = source.scrollWidth <= source.clientWidth + 1;
+    };
+    const follow = (from, to) => () => {
+      if (to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+    };
+    mirror.addEventListener("scroll", follow(mirror, source));
+    source.addEventListener("scroll", follow(source, mirror));
+    window.addEventListener("resize", size);
+    if (window.ResizeObserver) new ResizeObserver(size).observe(source.querySelector("table") || source);
+    size();
+  }
   document.querySelectorAll("select[data-autosubmit]").forEach((select) => {
     select.addEventListener("change", () => select.form.submit());
   });

@@ -866,3 +866,43 @@ a.workbook-summary.active {
   padding: 5px 10px;
   font-size: 12px;
 }
+
+.table-scroll-top {
+  position: sticky;
+  top: 68px;
+  z-index: 4;
+  height: 16px;
+  margin-bottom: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 8px;
+  background: rgba(7, 17, 31, .85);
+}
+
+.table-scroll-top > div {
+  height: 1px;
+}
+
+.table-scroll-top[hidden] {
+  display: none;
+}
+
+.workbook-table th.ai-col,
+.workbook-table td.ai-col {
+  min-width: 380px;
+  max-width: 520px;
+}
+
+.column-menu-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+.workbook-table td.ai-col .cell-text {
+  max-height: none;
+}
+
+.table-scroll-top,
+.table-panel {
+  scrollbar-color: #3d5d7c rgba(7, 17, 31, .6);
+}

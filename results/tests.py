@@ -388,7 +388,7 @@ class PortalTests(TestCase):
         self.assertNotContains(detail, '<p class="eyebrow">Hypervisor</p>')
         tab = self.client.get(
             reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5]),
-            {"suite": "Hypervisor"},
+            {"suite": "Hypervisor", "status": "ALL"},
         )
         self.assertContains(tab, "H_trap-00")
         self.assertContains(tab, "ExceptionsH_ecall-00")
@@ -437,7 +437,9 @@ class PortalTests(TestCase):
         self.assertEqual(TestRun.objects.get().test_results.count(), 2)
 
         self.client.force_login(self.user)
-        detail = self.client.get(reverse("run-detail", args=["vf2", "vf2-privileged-weekly", 3]))
+        detail = self.client.get(
+            reverse("run-detail", args=["vf2", "vf2-privileged-weekly", 3]), {"status": "ALL"}
+        )
         self.assertContains(detail, "Sail version")
         self.assertContains(detail, "0.14")
         self.assertContains(detail, "runner123")
@@ -952,7 +954,7 @@ class WorkbookTests(TestCase):
         added = self.client.post(
             reverse("analysis-column-add", args=self.args), {"name": "Fix PR", "status": "FAIL"}
         )
-        self.assertRedirects(added, reverse("run-detail", args=self.args) + "?status=FAIL")
+        self.assertRedirects(added, reverse("run-detail", args=self.args))  # Failed is the default
         column = self.run.analysis_columns.get(name="Fix PR")
         update = reverse("analysis-column-update", args=[*self.args, column.id])
         self.client.post(update, {"action": "rename", "name": "Fix link"})
@@ -1161,17 +1163,22 @@ class UnifiedRunPageTests(TestCase):
 
     def test_old_workbook_links_redirect_with_their_filters(self):
         old = reverse("run-workbook", args=["vf2", "vf2-uart-weekly", 9])
-        self.assertRedirects(self.client.get(old), self.url)
+        # The old workbook showed every test unless "failures only" was set.
+        self.assertRedirects(self.client.get(old), self.url + "?status=ALL")
         self.assertRedirects(
             self.client.get(old, {"suite": "Privileged", "show": "failed"}),
-            self.url + "?suite=Privileged&status=FAIL",
+            self.url + "?suite=Privileged",
         )
 
     def test_search_and_status_filters(self):
         failed = self.client.get(self.url, {"status": "FAIL"})
         self.assertContains(failed, "ExceptionsS-00")
         self.assertNotContains(failed, "I-add-01")
-        searched = self.client.get(self.url, {"q": "add"})
+        default = self.client.get(self.url)
+        self.assertContains(default, "ExceptionsS-00")
+        self.assertNotContains(default, "I-add-01")
+        self.assertContains(default, '<option value="FAIL" selected>Failed</option>')
+        searched = self.client.get(self.url, {"q": "add", "status": "ALL"})
         self.assertContains(searched, "I-add-01")
         self.assertNotContains(searched, "ExceptionsS-00")
         self.assertContains(searched, "Showing 1 of 2 tests")
@@ -1216,8 +1223,61 @@ class JenkinsLinkTests(TestCase):
             external_url="https://192.168.50.95/job/megrez-uart-weekly/5/artifact/summary.md",
         )
         self.client.force_login(user)
-        page = self.client.get(run.get_absolute_url())
+        page = self.client.get(run.get_absolute_url(), {"status": "ALL"})
         self.assertNotContains(page, "192.168.50.95")
         self.assertContains(page, 'href="/job/megrez-uart-weekly/5/"')
         self.assertContains(page, 'href="/job/megrez-uart-weekly/5/artifact/h.log"')
         self.assertContains(page, 'href="/job/megrez-uart-weekly/5/artifact/summary.md"')
+
+
+class RunPageLayoutTests(TestCase):
+    def test_ai_analysis_and_verdict_come_right_after_the_hardware_result(self):
+        user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        board = Board.objects.create(slug="vf2", name="VisionFive 2")
+        run = TestRun.objects.create(
+            job=JenkinsJob.objects.create(board=board, name="vf2-uart-weekly"), build_number=6
+        )
+        result = TestResult.objects.create(
+            run=run,
+            test_case=ACTTestCase.objects.create(name="ExceptionsS-00"),
+            hardware_status=Status.FAIL,
+        )
+        for position, (key, name) in enumerate(
+            [
+                ("verdict", "Verdict"),
+                ("triage_root_cause", "Root cause (triage)"),
+                ("ai_analysis", "AI analysis"),
+            ]
+        ):
+            column = AnalysisColumn.objects.create(run=run, key=key, name=name, position=position)
+            AnalysisValue.objects.create(column=column, test_result=result, value=f"{name} text")
+        self.client.force_login(user)
+        page = self.client.get(run.get_absolute_url()).content.decode()
+        html = page[page.index("<table") :]
+        order = [
+            html.index(text)
+            for text in (
+                "AI analysis</span>",
+                "Verdict</span>",
+                ">Sail",
+                "Root cause (triage)</span>",
+            )
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("data-scroll-mirror", page)
+
+    def test_run_without_failures_offers_all_tests(self):
+        user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        board = Board.objects.create(slug="vf2", name="VisionFive 2")
+        run = TestRun.objects.create(
+            job=JenkinsJob.objects.create(board=board, name="vf2-uart-sanity"), build_number=10
+        )
+        TestResult.objects.create(
+            run=run,
+            test_case=ACTTestCase.objects.create(name="I-add-01"),
+            hardware_status=Status.PASS,
+        )
+        self.client.force_login(user)
+        page = self.client.get(run.get_absolute_url())
+        self.assertContains(page, "No failed tests in this run.")
+        self.assertContains(page, "?status=ALL")
