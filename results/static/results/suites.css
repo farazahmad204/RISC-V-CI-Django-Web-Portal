@@ -743,3 +743,23 @@
   background: var(--surface);
   box-shadow: 1px 0 0 var(--line);
 }
+
+.elf-analysis {
+  margin-top: 16px;
+}
+
+.elf-analysis h3 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+  color: var(--cyan);
+}
+
+.elf-analysis .cell-text {
+  max-height: none;
+  font-size: 14px;
+}
+
+.elf-analysis p.muted {
+  margin-top: 14px;
+  font-size: 12px;
+}

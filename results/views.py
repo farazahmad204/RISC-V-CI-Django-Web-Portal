@@ -7,6 +7,7 @@ import re
 import secrets
 import shutil
 import ssl
+from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urljoin
@@ -209,7 +210,29 @@ def elf_submission_detail(request, submission_id):
     )
     if submission.uploaded_by_id != request.user.id and not request.user.is_staff:
         raise PermissionDenied
-    return render(request, "results/elf_submission_detail.html", {"submission": submission})
+    analysis = []
+    triage_pending = False
+    run = submission.run
+    result = run.test_results.first() if run else None
+    if result is not None:
+        values = {
+            value.column.key: value.value
+            for value in result.analysis_values.select_related("column")
+        }
+        for key, label in (("ai_analysis", "AI analysis"), ("triage_root_cause", "Root cause")):
+            if values.get(key):
+                analysis.append({"label": label, "value": values[key]})
+        # Triage is published a few seconds after the result; wait for it briefly.
+        triage_pending = (
+            result.hardware_status != Status.PASS
+            and not (run.metadata or {}).get("triage")
+            and timezone.now() - run.updated_at < timedelta(minutes=10)
+        )
+    return render(
+        request,
+        "results/elf_submission_detail.html",
+        {"submission": submission, "analysis": analysis, "triage_pending": triage_pending},
+    )
 
 
 def elf_download(request, submission_id):
@@ -340,13 +363,18 @@ def _run_for_job(slug, job_name, build_number):
     )
 
 
+def _is_single_elf_job(job_name):
+    base = settings.JENKINS_SINGLE_ELF_JOB
+    return job_name == base or job_name.startswith(f"{base}-")
+
+
 def _require_run_access(user, run):
-    if run.job.name != settings.JENKINS_SINGLE_ELF_JOB:
-        return
     try:
         submission = run.elf_submission
     except ElfSubmission.DoesNotExist:
         submission = None
+    if submission is None and not _is_single_elf_job(run.job.name):
+        return
     if not user.is_staff and (submission is None or submission.uploaded_by_id != user.id):
         raise PermissionDenied("This single-ELF result belongs to another user")
 
