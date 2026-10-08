@@ -355,7 +355,7 @@ class PortalTests(TestCase):
         response = self.client.get(reverse("run-workbook", args=["vf2", "vf2-job", 8]))
 
         self.assertContains(response, "ExceptionsM-01")
-        self.assertContains(response, "hardware mismatch")
+        self.assertNotContains(response, "hardware mismatch")  # failure reason not shown
         self.assertNotContains(response, "Add an analysis column")
         denied = self.client.post(
             reverse("analysis-column-add", args=["vf2", "vf2-job", 8]),
@@ -878,7 +878,6 @@ class WorkbookTests(TestCase):
             [
                 "Verdict",
                 "Root cause (triage)",
-                "Category (triage)",
                 "Owner (triage)",
                 "Evidence (triage)",
                 "Notes",
@@ -914,7 +913,9 @@ class WorkbookTests(TestCase):
         )
         self.assertEqual(self._value("triage_root_cause", "H_trap-00").updated_by, self.editor)
         self.assertEqual(self._value("verdict", "H_trap-00").value, "Test or ACT issue")
-        self.assertEqual(self._value("triage_category", "H_trap-00").value, "trap_cause_mismatch")
+        self.assertEqual(
+            self._value("triage_owner", "H_trap-00").value, "Needs architectural review"
+        )
 
     def test_editor_saves_cells_but_results_stay_locked(self):
         self.client.force_login(self.editor)
@@ -992,7 +993,7 @@ class WorkbookTests(TestCase):
             response["Content-Type"],
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        self.assertIn("megrez-uart-weekly-5-workbook.xlsx", response["Content-Disposition"])
+        self.assertIn("megrez-uart-weekly-5-triage-report.xlsx", response["Content-Disposition"])
         archive = zipfile.ZipFile(io.BytesIO(response.content))
         ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
         workbook = ET.fromstring(archive.read("xl/workbook.xml"))
@@ -1017,3 +1018,12 @@ class WorkbookTests(TestCase):
         )
         self.run.refresh_from_db()
         self.assertEqual(self.run.metadata["triage"]["failures"], 0)
+
+    def test_report_has_no_extension_failure_reason_or_category_columns(self):
+        self._triage()
+        self.client.force_login(self.viewer)
+        page = self.client.get(reverse("run-workbook", args=self.args))
+        for removed in ("Extension", "Failure reason", "Category (triage)", "trap_cause_mismatch"):
+            self.assertNotContains(page, removed)
+        self.assertContains(page, "Download Triage Report")
+        self.assertFalse(self.run.analysis_columns.filter(key="triage_category").exists())

@@ -299,15 +299,13 @@ def export_workbook_xlsx(request, slug, job_name, build_number):
     board = run.job.board
     header = [
         "Test Name",
-        "Extension",
         "Suite",
         "Sail",
         "Spike",
         f"{board.name} (hardware)",
-        "Failure reason",
         *[column.name for column in columns],
     ]
-    widths = [40, 20, 15, 10, 10, 14, 45]
+    widths = [40, 15, 10, 10, 14]
     for column in columns:
         widths.append(24 if column.key == VERDICT_KEY else 60 if column.key else 32)
 
@@ -318,12 +316,10 @@ def export_workbook_xlsx(request, slug, job_name, build_number):
             rows.append(
                 [
                     result.test_case.name,
-                    result.test_case.extension,
                     result.test_case.category,
                     _status_cell(result.sail_status),
                     _status_cell(result.spike_status),
                     _status_cell(result.hardware_status),
-                    result.failure_reason,
                     *[cell["value"] for cell in row["cells"]],
                 ]
             )
@@ -371,7 +367,7 @@ def export_workbook_xlsx(request, slug, job_name, build_number):
         build_xlsx(sheets),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    filename = f"{slugify(run.job.name)}-{run.build_number}-workbook.xlsx"
+    filename = f"{slugify(run.job.name)}-{run.build_number}-triage-report.xlsx"
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
@@ -444,7 +440,6 @@ def ingest_triage(request):
                 continue
             values = {
                 "triage_root_cause": item.get("triage_explanation", ""),
-                "triage_category": item.get("triage_category", ""),
                 "triage_owner": item.get("triage_owner", ""),
                 "triage_evidence": _evidence_text(item.get("triage_evidence")),
                 "ai_analysis": item.get("ai_analysis", ""),
