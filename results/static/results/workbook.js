@@ -1,6 +1,10 @@
-// Workbook: edit Verdict and analysis cells in place. Execution results are not editable.
+// Run page: filters, and in-place editing of Verdict and analysis cells (editors only).
+// Execution results are not editable.
 (() => {
   const table = document.querySelector("table[data-workbook][data-save-url]");
+  document.querySelectorAll("select[data-autosubmit]").forEach((select) => {
+    select.addEventListener("change", () => select.form.submit());
+  });
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!window.confirm(form.dataset.confirm)) event.preventDefault();

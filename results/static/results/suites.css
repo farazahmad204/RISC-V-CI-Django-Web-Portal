@@ -763,3 +763,106 @@
   margin-top: 14px;
   font-size: 12px;
 }
+
+/* Unified run page */
+.run-hero h1 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.run-hero h1 .badge {
+  font-size: 13px;
+  letter-spacing: .05em;
+}
+
+a.workbook-summary {
+  display: block;
+  transition: border-color .15s, transform .15s;
+}
+
+a.workbook-summary:hover {
+  border-color: #3d5d7c;
+  transform: translateY(-2px);
+}
+
+a.workbook-summary.active {
+  border-color: var(--cyan);
+}
+
+.workbook-summary b {
+  font-weight: 700;
+}
+
+.run-info {
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.run-info summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 14px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.run-info summary::-webkit-details-marker {
+  display: none;
+}
+
+.run-info summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+
+.run-info[open] summary::before {
+  content: "▾";
+}
+
+.run-info-brief {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.run-info-body {
+  margin: 0;
+  padding: 4px 20px 20px;
+}
+
+.run-info-body h2 {
+  font-size: 17px;
+}
+
+.run-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.run-filter input[type="search"] {
+  min-width: 220px;
+}
+
+.run-filter select {
+  min-width: 150px;
+}
+
+.run-filter .button {
+  padding: 9px 13px;
+}
+
+.run-count {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.button.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}

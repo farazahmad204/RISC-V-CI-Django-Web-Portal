@@ -271,7 +271,7 @@ class PortalTests(TestCase):
         self.assertContains(response, "SkippedM-01")
         self.assertContains(response, "MissingM-01")
         self.assertNotContains(response, "PassedM-01")
-        self.assertContains(response, "Not Run (Skipped + Unknown)")
+        self.assertContains(response, '<option value="NOT_RUN" selected>Not run</option>')
 
     def test_same_build_number_from_two_jobs_has_distinct_run_urls(self):
         board = Board.objects.create(slug="vf2", name="VisionFive 2")
@@ -352,7 +352,7 @@ class PortalTests(TestCase):
         )
 
         self.client.force_login(self.user)
-        response = self.client.get(reverse("run-workbook", args=["vf2", "vf2-job", 8]))
+        response = self.client.get(reverse("run-detail", args=["vf2", "vf2-job", 8]))
 
         self.assertContains(response, "ExceptionsM-01")
         self.assertNotContains(response, "hardware mismatch")  # failure reason not shown
@@ -383,11 +383,13 @@ class PortalTests(TestCase):
         detail = self.client.get(
             reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5])
         )
-        self.assertContains(detail, "Hypervisor tests")
-        workbook_url = reverse("run-workbook", args=["milkv-megrez", "megrez-uart-weekly", 5])
-        workbook = self.client.get(workbook_url)
-        self.assertContains(workbook, "Hypervisor Tests")
-        tab = self.client.get(f"{workbook_url}?suite=Hypervisor")
+        # A run with one suite shows only the "All tests" card (no repeated suite card or tab).
+        self.assertContains(detail, '<p class="eyebrow">All tests</p>')
+        self.assertNotContains(detail, '<p class="eyebrow">Hypervisor</p>')
+        tab = self.client.get(
+            reverse("run-detail", args=["milkv-megrez", "megrez-uart-weekly", 5]),
+            {"suite": "Hypervisor"},
+        )
         self.assertContains(tab, "H_trap-00")
         self.assertContains(tab, "ExceptionsH_ecall-00")
 
@@ -660,7 +662,6 @@ class PortalTests(TestCase):
         pages = [
             board.get_absolute_url(),
             run.get_absolute_url(),
-            reverse("run-workbook", args=[board.slug, job.name, run.build_number]),
             reverse("elf-submission-detail", args=[submission.id]),
             reverse("elf-submit"),
         ]
@@ -919,8 +920,8 @@ class WorkbookTests(TestCase):
 
     def test_editor_saves_cells_but_results_stay_locked(self):
         self.client.force_login(self.editor)
-        page = self.client.get(reverse("run-workbook", args=self.args))
-        self.assertContains(page, "results/workbook.js")
+        page = self.client.get(reverse("run-detail", args=self.args))
+        self.assertContains(page, "data-save-url")
         verdict = self.run.analysis_columns.get(key="verdict")
 
         bad = self._save_cell(verdict, "H_trap-00", "Definitely fine")
@@ -936,10 +937,10 @@ class WorkbookTests(TestCase):
 
     def test_viewer_cannot_edit(self):
         self.client.force_login(self.viewer)
-        page = self.client.get(reverse("run-workbook", args=self.args))
+        page = self.client.get(reverse("run-detail", args=self.args))
         self.assertContains(page, "H_trap-00")
-        self.assertNotContains(page, "Add a column")
-        self.assertNotContains(page, "results/workbook.js")
+        self.assertNotContains(page, "Add column")
+        self.assertNotContains(page, "data-save-url")
         verdict = self.run.analysis_columns.get(key="verdict")
         self.assertEqual(self._save_cell(verdict, "H_trap-00", "Waived").status_code, 403)
         denied = self.client.post(reverse("analysis-column-add", args=self.args), {"name": "X"})
@@ -947,11 +948,11 @@ class WorkbookTests(TestCase):
 
     def test_columns_can_be_added_renamed_moved_and_deleted(self):
         self.client.force_login(self.editor)
-        self.client.get(reverse("run-workbook", args=self.args))
+        self.client.get(reverse("run-detail", args=self.args))
         added = self.client.post(
-            reverse("analysis-column-add", args=self.args), {"name": "Fix PR", "show": "failed"}
+            reverse("analysis-column-add", args=self.args), {"name": "Fix PR", "status": "FAIL"}
         )
-        self.assertRedirects(added, reverse("run-workbook", args=self.args) + "?show=failed")
+        self.assertRedirects(added, reverse("run-detail", args=self.args) + "?status=FAIL")
         column = self.run.analysis_columns.get(name="Fix PR")
         update = reverse("analysis-column-update", args=[*self.args, column.id])
         self.client.post(update, {"action": "rename", "name": "Fix link"})
@@ -968,11 +969,11 @@ class WorkbookTests(TestCase):
 
     def test_failures_only_filter(self):
         self.client.force_login(self.viewer)
-        page = self.client.get(reverse("run-workbook", args=self.args) + "?show=failed")
+        page = self.client.get(reverse("run-detail", args=self.args) + "?status=FAIL")
         self.assertContains(page, "H_trap-00")
         self.assertNotContains(page, "ExceptionsH_ecall-00")
         hyp = self.client.get(
-            reverse("run-workbook", args=self.args) + "?suite=Hypervisor&show=failed"
+            reverse("run-detail", args=self.args) + "?suite=Hypervisor&status=FAIL"
         )
         self.assertContains(hyp, "H_trap-00")
         self.assertNotContains(hyp, "ExceptionsS-00")
@@ -1022,7 +1023,7 @@ class WorkbookTests(TestCase):
     def test_report_has_no_extension_failure_reason_or_category_columns(self):
         self._triage()
         self.client.force_login(self.viewer)
-        page = self.client.get(reverse("run-workbook", args=self.args))
+        page = self.client.get(reverse("run-detail", args=self.args))
         for removed in ("Extension", "Failure reason", "Category (triage)", "trap_cause_mismatch"):
             self.assertNotContains(page, removed)
         self.assertContains(page, "Download Triage Report")
@@ -1114,3 +1115,63 @@ class RunElfAnalysisTests(TestCase):
         self.assertContains(page, "Failure reason: htinst was 0.")
         self.assertContains(page, "Expected cause 0x14, observed 0x2.")
         self.assertNotContains(page, "being prepared")
+
+
+class UnifiedRunPageTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        board = Board.objects.create(slug="vf2", name="VisionFive 2")
+        job = JenkinsJob.objects.create(board=board, name="vf2-uart-weekly")
+        self.run = TestRun.objects.create(
+            job=job,
+            build_number=9,
+            status=Status.FAIL,
+            metadata={
+                "sail_version": "0.14.1",
+                "build_url": "https://jenkins/job/vf2-uart-weekly/9/",
+            },
+        )
+        for name, status in (("ExceptionsS-00", Status.FAIL), ("I-add-01", Status.PASS)):
+            TestResult.objects.create(
+                run=self.run,
+                test_case=ACTTestCase.objects.create(name=name, category="Privileged"),
+                hardware_status=status,
+                duration_seconds=12.34,
+                log_path="https://jenkins/artifact/uart.log",
+            )
+        Artifact.objects.create(run=self.run, name="summary.md", relative_path="summary.md")
+        self.url = reverse("run-detail", args=["vf2", "vf2-uart-weekly", 9])
+        self.client.force_login(self.user)
+
+    def test_one_page_has_details_results_logs_and_analysis(self):
+        page = self.client.get(self.url)
+        for text in (
+            "Run details &amp; artifacts",
+            "summary.md",
+            "0.14.1",
+            "https://jenkins/job/vf2-uart-weekly/9/",
+            "Download Triage Report",
+            "ExceptionsS-00",
+            "https://jenkins/artifact/uart.log",
+            "12.3 s",
+            "Verdict",
+        ):
+            with self.subTest(text=text):
+                self.assertContains(page, text)
+
+    def test_old_workbook_links_redirect_with_their_filters(self):
+        old = reverse("run-workbook", args=["vf2", "vf2-uart-weekly", 9])
+        self.assertRedirects(self.client.get(old), self.url)
+        self.assertRedirects(
+            self.client.get(old, {"suite": "Privileged", "show": "failed"}),
+            self.url + "?suite=Privileged&status=FAIL",
+        )
+
+    def test_search_and_status_filters(self):
+        failed = self.client.get(self.url, {"status": "FAIL"})
+        self.assertContains(failed, "ExceptionsS-00")
+        self.assertNotContains(failed, "I-add-01")
+        searched = self.client.get(self.url, {"q": "add"})
+        self.assertContains(searched, "I-add-01")
+        self.assertNotContains(searched, "ExceptionsS-00")
+        self.assertContains(searched, "Showing 1 of 2 tests")

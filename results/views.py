@@ -397,52 +397,6 @@ def legacy_run_detail(request, slug, build_number):
 
 
 @login_required
-def run_detail(request, slug, job_name, build_number):
-    run = _run_for_job(slug, job_name, build_number)
-    _require_run_access(request.user, run)
-    results = run.test_results.select_related("test_case")
-    status = request.GET.get("status", "").upper()
-    query = request.GET.get("q", "").strip()
-    if status == "NOT_RUN":
-        results = results.filter(hardware_status__in=[Status.SKIPPED, Status.UNKNOWN])
-    elif status in Status.values:
-        results = results.filter(hardware_status=status)
-    if query:
-        results = results.filter(test_case__name__icontains=query)
-    suite_summaries = []
-    for category in SUITE_CATEGORIES:
-        summary = run.test_results.filter(test_case__category=category).aggregate(
-            expected=Count("id"),
-            completed=Count(
-                "id",
-                filter=Q(hardware_status__in=[Status.PASS, Status.FAIL]),
-            ),
-            passed=Count("id", filter=Q(hardware_status=Status.PASS)),
-            failed=Count("id", filter=Q(hardware_status=Status.FAIL)),
-        )
-        if not summary["expected"]:
-            continue
-        decided = summary["passed"] + summary["failed"]
-        summary.update(
-            name=category,
-            not_run=summary["expected"] - summary["completed"],
-            pass_percent=round(summary["passed"] * 100 / decided, 1) if decided else 0,
-        )
-        suite_summaries.append(summary)
-    return render(
-        request,
-        "results/run_detail.html",
-        {
-            "run": run,
-            "results": results[:2000],
-            "suite_summaries": suite_summaries,
-            "selected_status": status,
-            "query": query,
-        },
-    )
-
-
-@login_required
 @require_POST
 def delete_run(request, slug, job_name, build_number):
     if not request.user.is_staff:

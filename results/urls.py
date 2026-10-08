@@ -14,7 +14,7 @@ urlpatterns = [
     path("boards/<slug:slug>/info/", views.board_info, name="board-info"),
     path(
         "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/",
-        views.run_detail,
+        workbook.run_page,
         name="run-detail",
     ),
     path(
