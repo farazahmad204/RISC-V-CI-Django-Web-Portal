@@ -391,46 +391,6 @@ class PortalTests(TestCase):
         self.assertContains(tab, "H_trap-00")
         self.assertContains(tab, "ExceptionsH_ecall-00")
 
-    def test_authorized_user_can_add_and_save_analysis_column(self):
-        editor = get_user_model().objects.create_user(
-            "report-editor", password="safe-test-password"
-        )
-        editor.user_permissions.add(Permission.objects.get(codename="manage_failure_analysis"))
-        board = Board.objects.create(slug="vf2", name="VisionFive 2")
-        job = JenkinsJob.objects.create(board=board, name="vf2-job")
-        run = TestRun.objects.create(job=job, build_number=9)
-        test_case = ACTTestCase.objects.create(
-            name="ExceptionsS-00", category="Privileged", extension="ExceptionsS"
-        )
-        result = TestResult.objects.create(
-            run=run,
-            test_case=test_case,
-            hardware_status=Status.FAIL,
-        )
-
-        self.client.force_login(editor)
-        created = self.client.post(
-            reverse("analysis-column-add", args=["vf2", "vf2-job", 9]),
-            {"name": "Investigation notes"},
-        )
-        column = AnalysisColumn.objects.get(run=run)
-        self.assertRedirects(
-            created,
-            f"{reverse('run-workbook', args=['vf2', 'vf2-job', 9])}?edit={column.id}",
-        )
-
-        saved = self.client.post(
-            reverse("analysis-column-save", args=["vf2", "vf2-job", 9, column.id]),
-            {f"analysis_{result.id}": "Needs trap-log review", "suite": "Privileged"},
-        )
-        self.assertEqual(saved.status_code, 302)
-        self.assertEqual(
-            AnalysisValue.objects.get(column=column, test_result=result).value,
-            "Needs trap-log review",
-        )
-        result.refresh_from_db()
-        self.assertEqual(result.hardware_status, Status.FAIL)
-
     @override_settings(PORTAL_INGEST_TOKEN="test-token")
     def test_ingest_creates_run_and_results(self):
         payload = {
@@ -839,3 +799,212 @@ class RunElfChecksTests(TestCase):
             submission = ElfSubmission.objects.get()
             self.assertRedirects(response, submission.get_absolute_url())
         trigger.assert_called_once()
+
+
+class WorkbookTests(TestCase):
+    def setUp(self):
+        self.board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        self.job = JenkinsJob.objects.create(board=self.board, name="megrez-uart-weekly")
+        self.run = TestRun.objects.create(job=self.job, build_number=5)
+        self.results = {}
+        for name, category, status in (
+            ("H_trap-00", "Hypervisor", Status.FAIL),
+            ("ExceptionsH_ecall-00", "Hypervisor", Status.PASS),
+            ("ExceptionsS-00", "Privileged", Status.FAIL),
+        ):
+            self.results[name] = TestResult.objects.create(
+                run=self.run,
+                test_case=ACTTestCase.objects.create(name=name, category=category),
+                sail_status=Status.PASS,
+                hardware_status=status,
+            )
+        self.viewer = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        self.editor = get_user_model().objects.create_user("editor", password="safe-test-password")
+        self.editor.user_permissions.add(Permission.objects.get(codename="manage_failure_analysis"))
+        self.args = ["milkv-megrez", "megrez-uart-weekly", 5]
+
+    def _triage(self, **extra):
+        payload = {
+            "job_name": "megrez-uart-weekly",
+            "build_number": 5,
+            "results": [
+                {
+                    "name": "H_trap-00",
+                    "triage_category": "trap_cause_mismatch",
+                    "triage_owner": "Needs architectural review",
+                    "triage_explanation": "Expected cause 0x14, observed 0x2.",
+                    "triage_evidence": {"mcause": "0x2", "mepc": "0x90001234", "satp": ""},
+                    "ai_analysis": "",
+                },
+                {"name": "ExceptionsS-00", "triage_explanation": "No coherent tuple."},
+                {"name": "NotInThisRun-00", "triage_explanation": "x"},
+            ],
+            **extra,
+        }
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            return self.client.post(
+                reverse("api-ingest-triage"),
+                data=json.dumps(payload),
+                content_type="application/json",
+                headers={"X-Portal-Token": "test-token"},
+            )
+
+    def _value(self, key, test):
+        return AnalysisValue.objects.get(
+            column__run=self.run, column__key=key, test_result=self.results[test]
+        )
+
+    def _save_cell(self, column, test, value):
+        return self.client.post(
+            reverse("analysis-cell-save", args=self.args),
+            {"column": column.id, "result": self.results[test].id, "value": value},
+        )
+
+    def test_triage_fills_columns_after_verdict_and_reports_unknown_tests(self):
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            denied = self.client.post(
+                reverse("api-ingest-triage"), data="{}", content_type="application/json"
+            )
+        self.assertEqual(denied.status_code, 401)
+        AnalysisColumn.objects.create(run=self.run, name="Notes", position=1)
+
+        response = self._triage()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["unknown_tests"], ["NotInThisRun-00"])
+        names = list(self.run.analysis_columns.order_by("position").values_list("name", flat=True))
+        self.assertEqual(
+            names,
+            [
+                "Verdict",
+                "Root cause (triage)",
+                "Category (triage)",
+                "Owner (triage)",
+                "Evidence (triage)",
+                "Notes",
+            ],
+        )
+        self.assertEqual(
+            self._value("triage_root_cause", "H_trap-00").value,
+            "Expected cause 0x14, observed 0x2.",
+        )
+        self.assertEqual(
+            self._value("triage_evidence", "H_trap-00").value, "mcause: 0x2\nmepc: 0x90001234"
+        )
+        self.assertEqual(self._value("verdict", "H_trap-00").value, "Needs investigation")
+        self.assertEqual(self._value("verdict", "H_trap-00").source, "triage")
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.metadata["triage"]["failures"], 2)
+
+    def test_republished_triage_keeps_person_edits(self):
+        self._triage()
+        self.client.force_login(self.editor)
+        root_cause = self.run.analysis_columns.get(key="triage_root_cause")
+        verdict = self.run.analysis_columns.get(key="verdict")
+        self.assertEqual(
+            self._save_cell(root_cause, "H_trap-00", "Missing htimedelta guard").status_code, 200
+        )
+        self._save_cell(verdict, "H_trap-00", "Test or ACT issue")
+
+        response = self._triage()
+
+        self.assertEqual(response.json()["kept_person_edits"], 2)
+        self.assertEqual(
+            self._value("triage_root_cause", "H_trap-00").value, "Missing htimedelta guard"
+        )
+        self.assertEqual(self._value("triage_root_cause", "H_trap-00").updated_by, self.editor)
+        self.assertEqual(self._value("verdict", "H_trap-00").value, "Test or ACT issue")
+        self.assertEqual(self._value("triage_category", "H_trap-00").value, "trap_cause_mismatch")
+
+    def test_editor_saves_cells_but_results_stay_locked(self):
+        self.client.force_login(self.editor)
+        page = self.client.get(reverse("run-workbook", args=self.args))
+        self.assertContains(page, "results/workbook.js")
+        verdict = self.run.analysis_columns.get(key="verdict")
+
+        bad = self._save_cell(verdict, "H_trap-00", "Definitely fine")
+        self.assertEqual(bad.status_code, 400)
+        ok = self._save_cell(verdict, "H_trap-00", "Known deviation")
+        self.assertEqual(ok.json()["verdict_class"], "known-deviation")
+        cleared = self._save_cell(verdict, "H_trap-00", "")
+        self.assertEqual(cleared.status_code, 200)
+        self.assertFalse(AnalysisValue.objects.filter(column=verdict).exists())
+        result = self.results["H_trap-00"]
+        result.refresh_from_db()
+        self.assertEqual(result.hardware_status, Status.FAIL)
+
+    def test_viewer_cannot_edit(self):
+        self.client.force_login(self.viewer)
+        page = self.client.get(reverse("run-workbook", args=self.args))
+        self.assertContains(page, "H_trap-00")
+        self.assertNotContains(page, "Add a column")
+        self.assertNotContains(page, "results/workbook.js")
+        verdict = self.run.analysis_columns.get(key="verdict")
+        self.assertEqual(self._save_cell(verdict, "H_trap-00", "Waived").status_code, 403)
+        denied = self.client.post(reverse("analysis-column-add", args=self.args), {"name": "X"})
+        self.assertEqual(denied.status_code, 403)
+
+    def test_columns_can_be_added_renamed_moved_and_deleted(self):
+        self.client.force_login(self.editor)
+        self.client.get(reverse("run-workbook", args=self.args))
+        added = self.client.post(
+            reverse("analysis-column-add", args=self.args), {"name": "Fix PR", "show": "failed"}
+        )
+        self.assertRedirects(added, reverse("run-workbook", args=self.args) + "?show=failed")
+        column = self.run.analysis_columns.get(name="Fix PR")
+        update = reverse("analysis-column-update", args=[*self.args, column.id])
+        self.client.post(update, {"action": "rename", "name": "Fix link"})
+        self.client.post(update, {"action": "left"})
+        names = list(self.run.analysis_columns.order_by("position").values_list("name", flat=True))
+        self.assertEqual(names, ["Fix link", "Verdict"])
+        verdict = self.run.analysis_columns.get(key="verdict")
+        self.client.post(
+            reverse("analysis-column-update", args=[*self.args, verdict.id]), {"action": "delete"}
+        )
+        self.assertTrue(self.run.analysis_columns.filter(key="verdict").exists())
+        self.client.post(update, {"action": "delete"})
+        self.assertFalse(self.run.analysis_columns.filter(name="Fix link").exists())
+
+    def test_failures_only_filter(self):
+        self.client.force_login(self.viewer)
+        page = self.client.get(reverse("run-workbook", args=self.args) + "?show=failed")
+        self.assertContains(page, "H_trap-00")
+        self.assertNotContains(page, "ExceptionsH_ecall-00")
+        hyp = self.client.get(
+            reverse("run-workbook", args=self.args) + "?suite=Hypervisor&show=failed"
+        )
+        self.assertContains(hyp, "H_trap-00")
+        self.assertNotContains(hyp, "ExceptionsS-00")
+
+    def test_excel_export_contains_sheets_results_and_analysis(self):
+        import io
+        import xml.etree.ElementTree as ET
+        import zipfile
+
+        self._triage()
+        self.client.force_login(self.editor)
+        verdict = self.run.analysis_columns.get(key="verdict")
+        self._save_cell(verdict, "ExceptionsS-00", "Confirmed hardware bug")
+
+        response = self.client.get(reverse("run-workbook-xlsx", args=self.args))
+
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("megrez-uart-weekly-5-workbook.xlsx", response["Content-Disposition"])
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        sheets = [sheet.get("name") for sheet in workbook.find("m:sheets", ns)]
+        self.assertEqual(
+            sheets,
+            ["Summary", "Test Status", "Failures", "Privileged Tests", "Hypervisor Tests"],
+        )
+        text = archive.read("xl/worksheets/sheet3.xml").decode()
+        self.assertIn("Confirmed hardware bug", text)
+        self.assertIn("Expected cause 0x14, observed 0x2.", text)
+        self.assertNotIn("ExceptionsH_ecall-00", text)
+        for name in archive.namelist():
+            if name.endswith(".xml"):
+                ET.fromstring(archive.read(name))

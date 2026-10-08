@@ -239,10 +239,33 @@ class Artifact(models.Model):
         return self.name
 
 
+# Workbook columns the portal creates itself, keyed by AnalysisColumn.key. People can rename,
+# move or (except the verdict) delete them; triage re-publishes find them by key.
+VERDICT_KEY = "verdict"
+VERDICT_CHOICES = (
+    "Needs investigation",
+    "Confirmed hardware bug",
+    "Known deviation",
+    "Test or ACT issue",
+    "Reference model issue",
+    "Runner or CI issue",
+    "Waived",
+)
+TRIAGE_COLUMNS = (
+    ("triage_root_cause", "Root cause (triage)"),
+    ("triage_category", "Category (triage)"),
+    ("triage_owner", "Owner (triage)"),
+    ("triage_evidence", "Evidence (triage)"),
+    ("ai_analysis", "AI analysis"),
+)
+
+
 class AnalysisColumn(models.Model):
     run = models.ForeignKey(TestRun, on_delete=models.CASCADE, related_name="analysis_columns")
     name = models.CharField(max_length=80)
     position = models.PositiveIntegerField(default=0)
+    # "" for a column a person added; VERDICT_KEY or a TRIAGE_COLUMNS key otherwise.
+    key = models.CharField(max_length=40, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -255,7 +278,12 @@ class AnalysisColumn(models.Model):
     class Meta:
         ordering = ["position", "id"]
         constraints = [
-            models.UniqueConstraint(fields=["run", "name"], name="unique_analysis_column_per_run")
+            models.UniqueConstraint(fields=["run", "name"], name="unique_analysis_column_per_run"),
+            models.UniqueConstraint(
+                fields=["run", "key"],
+                condition=~models.Q(key=""),
+                name="unique_analysis_column_key_per_run",
+            ),
         ]
         permissions = [
             ("manage_failure_analysis", "Can manage build failure-analysis columns"),
@@ -263,6 +291,10 @@ class AnalysisColumn(models.Model):
 
     def __str__(self):
         return f"{self.run}: {self.name}"
+
+    @property
+    def is_verdict(self):
+        return self.key == VERDICT_KEY
 
 
 class AnalysisValue(models.Model):
@@ -277,6 +309,9 @@ class AnalysisValue(models.Model):
         related_name="analysis_values",
     )
     value = models.TextField(blank=True)
+    # "triage" for a value the triage job wrote; it is replaced when triage is re-published.
+    # Any edit by a person makes it "person", and re-publishes never overwrite it.
+    source = models.CharField(max_length=16, default="person")
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
