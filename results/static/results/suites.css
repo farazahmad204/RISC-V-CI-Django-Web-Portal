@@ -203,9 +203,7 @@
 
 .workbook-downloads,
 .analysis-controls,
-.analysis-controls form,
-.analysis-save-bar,
-.analysis-save-bar > div {
+.analysis-controls form {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -218,7 +216,7 @@
 
 .workbook-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -274,13 +272,15 @@
   margin-bottom: 16px;
 }
 
-.analysis-controls h2 {
-  margin-top: 2px;
+.analysis-controls {
+  padding: 12px 16px;
 }
 
-.analysis-controls p:last-child {
-  margin: 4px 0 0;
+.analysis-controls p {
+  flex: 1 1 420px;
+  margin: 0;
   color: var(--muted);
+  font-size: 13px;
 }
 
 .analysis-controls form {
@@ -288,27 +288,19 @@
   flex-wrap: wrap;
 }
 
-.workbook-table th span,
-.column-edit {
+.workbook-table th span {
   display: block;
-}
-
-.column-edit {
-  margin-top: 4px;
-  color: var(--blue);
-  font-size: 10px;
-  text-transform: none;
-  letter-spacing: normal;
 }
 
 .analysis-system-value,
 .analysis-value {
-  min-width: 220px;
-  max-width: 380px;
+  min-width: 260px;
+  max-width: 420px;
   white-space: normal;
 }
 
-.analysis-value textarea {
+.analysis-value textarea,
+.analysis-value select {
   width: 100%;
   min-width: 210px;
   resize: vertical;
@@ -318,19 +310,6 @@
   background: #081524;
   padding: 8px;
   font: inherit;
-}
-
-.analysis-save-bar {
-  position: sticky;
-  bottom: 14px;
-  z-index: 5;
-  justify-content: space-between;
-  margin-top: 14px;
-  padding: 13px 16px;
-  border: 1px solid rgba(53, 208, 186, .35);
-  border-radius: 12px;
-  background: rgba(13, 27, 44, .96);
-  box-shadow: var(--shadow);
 }
 
 .run-suite-grid {
@@ -384,11 +363,6 @@
   .run-suite-grid,
   .workbook-summary-grid {
     grid-template-columns: 1fr;
-  }
-
-  .analysis-save-bar {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }
 
@@ -576,4 +550,196 @@
   height: 64px;
   border-radius: 12px;
   margin-bottom: 4px;
+}
+
+.workbook-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 12px;
+}
+
+.workbook-toolbar .workbook-tabs {
+  max-width: 100%;
+}
+
+.triage-note {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.workbook-table th.locked-col {
+  background: rgba(7, 17, 31, .35);
+}
+
+.workbook-table th.analysis-col {
+  position: relative;
+  min-width: 160px;
+  color: var(--cyan);
+}
+
+.column-menu {
+  display: inline-block;
+  margin-top: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.column-menu summary {
+  padding: 0 7px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+
+.column-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.column-menu[open] summary {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.column-menu-body {
+  position: absolute;
+  right: 8px;
+  z-index: 6;
+  display: grid;
+  gap: 10px;
+  width: 260px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  white-space: normal;
+}
+
+.column-menu-body form,
+.column-menu-row {
+  display: grid;
+  gap: 6px;
+}
+
+.column-menu-row {
+  grid-template-columns: 1fr 1fr;
+}
+
+.column-menu-body input {
+  min-width: 0;
+  width: 100%;
+}
+
+.column-menu-body .button {
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.column-menu-body .button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.analysis-value.editable {
+  cursor: pointer;
+}
+
+.analysis-value.editable:hover {
+  background: rgba(104, 167, 255, .06);
+}
+
+.source-triage {
+  box-shadow: inset 3px 0 0 rgba(104, 167, 255, .55);
+}
+
+.source-person {
+  box-shadow: inset 3px 0 0 rgba(53, 208, 186, .7);
+}
+
+.cell-text {
+  max-height: 9.5em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cell-empty {
+  color: var(--muted);
+}
+
+.cell-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.cell-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cell-editor-actions .button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.cell-editor-error {
+  color: var(--red);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.legend {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.verdict {
+  display: inline-block;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.verdict-needs-investigation {
+  color: var(--amber);
+  border-color: rgba(245, 189, 88, .4);
+}
+
+.verdict-confirmed-hardware-bug {
+  color: var(--red);
+  border-color: rgba(255, 107, 120, .45);
+}
+
+.verdict-known-deviation,
+.verdict-waived {
+  color: var(--muted);
+}
+
+.verdict-test-or-act-issue,
+.verdict-reference-model-issue,
+.verdict-runner-or-ci-issue {
+  color: var(--blue);
+  border-color: rgba(104, 167, 255, .4);
+}
+
+.workbook-table th:first-child,
+.workbook-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--line);
 }

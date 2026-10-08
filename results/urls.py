@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, workbook
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -19,18 +19,28 @@ urlpatterns = [
     ),
     path(
         "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/",
-        views.run_workbook,
+        workbook.run_workbook,
         name="run-workbook",
     ),
     path(
+        "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/export.xlsx",
+        workbook.export_workbook_xlsx,
+        name="run-workbook-xlsx",
+    ),
+    path(
+        "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/cells/",
+        workbook.save_analysis_cell,
+        name="analysis-cell-save",
+    ),
+    path(
         "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/columns/add/",
-        views.add_analysis_column,
+        workbook.add_analysis_column,
         name="analysis-column-add",
     ),
     path(
-        "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/columns/<int:column_id>/save/",
-        views.save_analysis_column,
-        name="analysis-column-save",
+        "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/columns/<int:column_id>/",
+        workbook.update_analysis_column,
+        name="analysis-column-update",
     ),
     path(
         "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/delete/",
@@ -53,6 +63,7 @@ urlpatterns = [
         name="test-uart-download",
     ),
     path("api/v1/runs/", views.ingest_run, name="api-ingest-run"),
+    path("api/v1/triage/", workbook.ingest_triage, name="api-ingest-triage"),
     path("api/v1/boards/health/", views.ingest_board_health, name="api-board-health"),
     path(
         "api/v1/elf/<uuid:submission_id>/download/",
