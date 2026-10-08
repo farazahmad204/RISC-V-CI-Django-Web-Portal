@@ -253,7 +253,6 @@ VERDICT_CHOICES = (
 )
 TRIAGE_COLUMNS = (
     ("triage_root_cause", "Root cause (triage)"),
-    ("triage_category", "Category (triage)"),
     ("triage_owner", "Owner (triage)"),
     ("triage_evidence", "Evidence (triage)"),
     ("ai_analysis", "AI analysis"),
