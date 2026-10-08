@@ -252,10 +252,10 @@ VERDICT_CHOICES = (
     "Waived",
 )
 TRIAGE_COLUMNS = (
+    ("ai_analysis", "AI analysis"),  # failure reason, root cause, confidence, next step
     ("triage_root_cause", "Root cause (triage)"),
     ("triage_owner", "Owner (triage)"),
     ("triage_evidence", "Evidence (triage)"),
-    ("ai_analysis", "AI analysis"),
 )
 
 
