@@ -1052,3 +1052,65 @@ class WorkbookTests(TestCase):
         names = list(self.run.analysis_columns.order_by("position").values_list("name", flat=True))
         self.assertEqual(names[:3], ["Verdict", "AI analysis", "Root cause (triage)"])
         self.assertEqual(self._value("ai_analysis", "H_trap-00").value, payload_ai)
+
+
+class RunElfAnalysisTests(TestCase):
+    def setUp(self):
+        self.owner = get_user_model().objects.create_user("owner", password="safe-test-password")
+        self.other = get_user_model().objects.create_user("other", password="safe-test-password")
+        board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        # Jenkins publishes single-ELF runs as "<job>-<board slug>".
+        job = JenkinsJob.objects.create(board=board, name="riscv-uart-single-elf-milkv-megrez")
+        self.run = TestRun.objects.create(job=job, build_number=7, status=Status.FAIL)
+        self.result = TestResult.objects.create(
+            run=self.run,
+            test_case=ACTTestCase.objects.create(name="my_test.elf"),
+            hardware_status=Status.FAIL,
+        )
+        self.submission = ElfSubmission.objects.create(
+            uploaded_by=self.owner,
+            board=board,
+            elf="elf-uploads/my_test.elf",
+            original_name="my_test.elf",
+            sha256="0" * 64,
+            size_bytes=64,
+            download_token_hash="",
+            run=self.run,
+        )
+
+    def test_board_suffixed_single_elf_run_is_private(self):
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(self.run.get_absolute_url()).status_code, 403)
+        workbook = reverse("run-workbook", args=["milkv-megrez", self.run.job.name, 7])
+        self.assertEqual(self.client.get(workbook).status_code, 403)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(self.run.get_absolute_url()).status_code, 200)
+
+    def test_submission_page_waits_for_and_then_shows_ai_analysis(self):
+        self.client.force_login(self.owner)
+        waiting = self.client.get(self.submission.get_absolute_url())
+        self.assertContains(waiting, "The AI analysis is being prepared")
+
+        payload = {
+            "job_name": "riscv-uart-single-elf-milkv-megrez",
+            "build_number": 7,
+            "results": [
+                {
+                    "name": "my_test.elf",
+                    "triage_explanation": "Expected cause 0x14, observed 0x2.",
+                    "ai_analysis": "Failure reason: htinst was 0.\nRoot cause: H draft 0.6.",
+                }
+            ],
+        }
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            response = self.client.post(
+                reverse("api-ingest-triage"),
+                data=json.dumps(payload),
+                content_type="application/json",
+                headers={"X-Portal-Token": "test-token"},
+            )
+        self.assertEqual(response.status_code, 200)
+        page = self.client.get(self.submission.get_absolute_url())
+        self.assertContains(page, "Failure reason: htinst was 0.")
+        self.assertContains(page, "Expected cause 0x14, observed 0x2.")
+        self.assertNotContains(page, "being prepared")
