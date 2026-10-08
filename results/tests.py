@@ -1027,3 +1027,28 @@ class WorkbookTests(TestCase):
             self.assertNotContains(page, removed)
         self.assertContains(page, "Download Triage Report")
         self.assertFalse(self.run.analysis_columns.filter(key="triage_category").exists())
+
+    def test_ai_analysis_column_follows_verdict(self):
+        payload_ai = "Failure reason: hedeleg bit 18 read back 0.\nRoot cause: H draft 0.6."
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            self.client.post(
+                reverse("api-ingest-triage"),
+                data=json.dumps(
+                    {
+                        "job_name": "megrez-uart-weekly",
+                        "build_number": 5,
+                        "results": [
+                            {
+                                "name": "H_trap-00",
+                                "triage_explanation": "x",
+                                "ai_analysis": payload_ai,
+                            }
+                        ],
+                    }
+                ),
+                content_type="application/json",
+                headers={"X-Portal-Token": "test-token"},
+            )
+        names = list(self.run.analysis_columns.order_by("position").values_list("name", flat=True))
+        self.assertEqual(names[:3], ["Verdict", "AI analysis", "Root cause (triage)"])
+        self.assertEqual(self._value("ai_analysis", "H_trap-00").value, payload_ai)
