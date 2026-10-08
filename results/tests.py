@@ -1008,3 +1008,12 @@ class WorkbookTests(TestCase):
         for name in archive.namelist():
             if name.endswith(".xml"):
                 ET.fromstring(archive.read(name))
+
+    def test_triage_without_failures_adds_no_columns(self):
+        response = self._triage(results=[])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(self.run.analysis_columns.values_list("name", flat=True)), ["Verdict"]
+        )
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.metadata["triage"]["failures"], 0)

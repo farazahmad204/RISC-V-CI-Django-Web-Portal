@@ -381,8 +381,8 @@ def _evidence_text(evidence):
         return str(evidence or "")
     lines = []
     for key, value in evidence.items():
-        if value in (None, "", [], {}):
-            continue
+        if key == "evidence_lines" or value in (None, "", [], {}):
+            continue  # evidence_lines is the raw log excerpt; the UART log link has it all
         if isinstance(value, list):
             value = "; ".join(
                 json.dumps(item) if isinstance(item, dict) else str(item) for item in value[:5]
@@ -426,7 +426,7 @@ def ingest_triage(request):
     with transaction.atomic():
         verdict = ensure_verdict_column(run)
         columns, created = {}, []
-        for key, name in TRIAGE_COLUMNS:
+        for key, name in TRIAGE_COLUMNS if items else ():  # no failures: no empty columns
             if key == "ai_analysis" and not has_ai:
                 continue
             columns[key], is_new = _column_for_key(run, key, name)

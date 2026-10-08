@@ -294,8 +294,8 @@
 
 .analysis-system-value,
 .analysis-value {
-  min-width: 220px;
-  max-width: 380px;
+  min-width: 260px;
+  max-width: 420px;
   white-space: normal;
 }
 
@@ -733,4 +733,13 @@
 .verdict-runner-or-ci-issue {
   color: var(--blue);
   border-color: rgba(104, 167, 255, .4);
+}
+
+.workbook-table th:first-child,
+.workbook-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--line);
 }
