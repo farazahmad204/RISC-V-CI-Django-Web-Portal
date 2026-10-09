@@ -591,11 +591,13 @@ def ingest_run(request):
         }
         run.test_results.exclude(test_case__name__in=incoming_test_names).delete()
         for item in incoming_results:
+            # Clip text to the column sizes: one over-long value (e.g. an
+            # extension derived from a long test name) must not fail the run.
             test_case, _ = TestCase.objects.update_or_create(
-                name=item["name"],
+                name=str(item["name"])[:300],
                 defaults={
-                    "category": item.get("category", ""),
-                    "extension": item.get("extension", ""),
+                    "category": str(item.get("category", ""))[:80],
+                    "extension": str(item.get("extension", ""))[:80],
                 },
             )
             log_path = item.get("log_path", "")
@@ -619,7 +621,7 @@ def ingest_run(request):
                     "hardware_status": item.get("hardware_status", Status.UNKNOWN),
                     "duration_seconds": item.get("duration_seconds"),
                     "failure_reason": item.get("failure_reason", ""),
-                    "log_path": log_path,
+                    "log_path": str(log_path)[:500],
                 },
             )
         for item in payload.get("artifacts", []):
