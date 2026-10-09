@@ -29,6 +29,7 @@ from .models import (
     VERDICT_KEY,
     AnalysisColumn,
     AnalysisValue,
+    JenkinsJob,
     Status,
     TestResult,
     TestRun,
@@ -499,6 +500,7 @@ def ingest_triage(request):
         results = {
             result.test_case.name: result for result in run.test_results.select_related("test_case")
         }
+        signatures: dict[str, str] = {}
         for item in items:
             result = results.get(str(item["name"]))
             if result is None:
@@ -512,7 +514,14 @@ def ingest_triage(request):
             }
             targets = [(columns[key], values[key]) for key in columns]
             if result.hardware_status == Status.FAIL:
-                targets.append((verdict, "Needs investigation"))
+                # The agent may already know the verdict (a measured board deviation, or one a
+                # person confirmed earlier for the same failure signature).
+                suggested = str(item.get("verdict") or "")
+                targets.append(
+                    (verdict, suggested if suggested in VERDICT_CHOICES else "Needs investigation")
+                )
+            if item.get("triage_signature"):
+                signatures[result.test_case.name] = str(item["triage_signature"])[:64]
             for column, text in targets:
                 text = str(text or "").strip()[:MAX_VALUE_CHARS]
                 existing = AnalysisValue.objects.filter(column=column, test_result=result).first()
@@ -534,6 +543,7 @@ def ingest_triage(request):
             "published_at": timezone.now().isoformat(),
             "failures": len(items) - len(unknown),
             "ai_model": next((str(i.get("ai_model")) for i in items if i.get("ai_model")), ""),
+            "signatures": signatures,
         }
         run.metadata = metadata
         run.save(update_fields=["metadata"])
@@ -545,3 +555,61 @@ def ingest_triage(request):
             "unknown_tests": unknown[:50],
         }
     )
+
+
+FEEDBACK_KEYS = (VERDICT_KEY, "ai_analysis", "triage_root_cause")
+
+
+@csrf_exempt
+def triage_feedback(request):
+    """Person-edited Verdicts and root causes for the board of ?job_name=, for the triage memory.
+
+    One entry per (run, test) with the failure signature the triage agent sent for that test,
+    so the agent can trust a person's conclusion the next time the same failure appears.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET only"}, status=405)
+    if not _authorized(request):
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    job = (
+        JenkinsJob.objects.select_related("board")
+        .filter(name=str(request.GET.get("job_name", "")))
+        .first()
+    )
+    if job is None:
+        return JsonResponse({"feedback": []})
+    values = (
+        AnalysisValue.objects.filter(
+            source="person",
+            column__key__in=FEEDBACK_KEYS,
+            test_result__run__job__board=job.board,
+        )
+        .select_related("column", "test_result__test_case", "test_result__run__job", "updated_by")
+        .order_by("-updated_at")[:2000]
+    )
+    entries: dict[tuple[int, str], dict] = {}
+    for value in values:
+        run = value.test_result.run
+        test = value.test_result.test_case.name
+        signature = ((run.metadata or {}).get("triage") or {}).get("signatures", {}).get(test, "")
+        entry = entries.setdefault(
+            (run.id, test),
+            {
+                "test": test,
+                "run": f"{run.job.name}#{run.build_number}",
+                "signature": signature,
+                "category": value.test_result.test_case.category,
+                "verdict": "",
+                "root_cause": "",
+                "updated_by": "",
+                "updated_at": "",
+            },
+        )
+        if value.column.key == VERDICT_KEY:
+            entry["verdict"] = value.value
+        elif not entry["root_cause"] or value.column.key == "ai_analysis":
+            entry["root_cause"] = value.value[:1500]
+        if value.updated_by and not entry["updated_by"]:
+            entry["updated_by"] = value.updated_by.get_username()
+        entry["updated_at"] = max(entry["updated_at"], value.updated_at.isoformat())
+    return JsonResponse({"feedback": list(entries.values())})
