@@ -1281,3 +1281,34 @@ class RunPageLayoutTests(TestCase):
         page = self.client.get(run.get_absolute_url())
         self.assertContains(page, "No failed tests in this run.")
         self.assertContains(page, "?status=ALL")
+
+
+class IngestFieldLimitTests(TestCase):
+    @override_settings(PORTAL_INGEST_TOKEN="test-token")
+    def test_long_extension_is_clipped_not_rejected(self):
+        long_name = (
+            "Hypervisor_Exceptions-PRIO_01_Verify_illegal_instruction_takes_priority_over"
+            "_virtual_instr"
+        )
+        payload = {
+            "board": {"slug": "milkv-megrez", "name": "Milk-V Megrez"},
+            "job": {"name": "megrez-damo-uart-weekly"},
+            "build_number": 3,
+            "results": [
+                {
+                    "name": long_name,
+                    "extension": long_name,
+                    "category": "Hypervisor",
+                    "hardware_status": "FAIL",
+                }
+            ],
+        }
+        response = self.client.post(
+            reverse("api-ingest-run"),
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers={"X-Portal-Token": "test-token"},
+        )
+        self.assertEqual(response.status_code, 201)
+        case = ACTTestCase.objects.get(name=long_name)
+        self.assertEqual(case.extension, long_name[:80])
