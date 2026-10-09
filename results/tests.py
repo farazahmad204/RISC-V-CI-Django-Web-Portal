@@ -1056,6 +1056,50 @@ class WorkbookTests(TestCase):
         self.assertEqual(names[:3], ["Verdict", "AI analysis", "Root cause (triage)"])
         self.assertEqual(self._value("ai_analysis", "H_trap-00").value, payload_ai)
 
+    def test_suggested_verdict_and_signature_then_person_feedback(self):
+        payload = {
+            "job_name": "megrez-uart-weekly",
+            "build_number": 5,
+            "results": [
+                {
+                    "name": "H_trap-00",
+                    "triage_explanation": "henvcfg absent",
+                    "triage_signature": "abc123",
+                    "verdict": "Known deviation",
+                },
+                {"name": "ExceptionsS-00", "triage_explanation": "x", "verdict": "Bogus"},
+            ],
+        }
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            self.client.post(
+                reverse("api-ingest-triage"),
+                data=json.dumps(payload),
+                content_type="application/json",
+                headers={"X-Portal-Token": "test-token"},
+            )
+        self.assertEqual(self._value("verdict", "H_trap-00").value, "Known deviation")
+        self.assertEqual(self._value("verdict", "ExceptionsS-00").value, "Needs investigation")
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.metadata["triage"]["signatures"]["H_trap-00"], "abc123")
+
+        self.client.force_login(self.editor)
+        verdict = self.run.analysis_columns.get(key="verdict")
+        root = self.run.analysis_columns.get(key="triage_root_cause")
+        self._save_cell(verdict, "H_trap-00", "Confirmed hardware bug")
+        self._save_cell(root, "H_trap-00", "htinst not written on guest page fault")
+        url = reverse("api-triage-feedback") + "?job_name=megrez-uart-weekly"
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            self.assertEqual(self.client.get(url).status_code, 401)
+            feedback = self.client.get(url, headers={"X-Portal-Token": "test-token"}).json()[
+                "feedback"
+            ]
+        self.assertEqual(len(feedback), 1)
+        entry = feedback[0]
+        self.assertEqual(entry["signature"], "abc123")
+        self.assertEqual(entry["verdict"], "Confirmed hardware bug")
+        self.assertEqual(entry["root_cause"], "htinst not written on guest page fault")
+        self.assertEqual(entry["updated_by"], "editor")
+
 
 class RunElfAnalysisTests(TestCase):
     def setUp(self):

@@ -64,6 +64,7 @@ urlpatterns = [
     ),
     path("api/v1/runs/", views.ingest_run, name="api-ingest-run"),
     path("api/v1/triage/", workbook.ingest_triage, name="api-ingest-triage"),
+    path("api/v1/triage/feedback/", workbook.triage_feedback, name="api-triage-feedback"),
     path("api/v1/boards/health/", views.ingest_board_health, name="api-board-health"),
     path(
         "api/v1/elf/<uuid:submission_id>/download/",
