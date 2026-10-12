@@ -355,3 +355,39 @@ class AnalysisValue(models.Model):
 
     def __str__(self):
         return f"{self.test_result}: {self.column.name}"
+
+
+# Root-cause classes the triage agent reports, in the order the report page shows them.
+TRIAGE_CLASSES = (
+    "DUT noncompliance",
+    "Unsupported feature",
+    "Implementation-defined behavior",
+    "Reference-model mismatch",
+    "Test issue",
+    "Environment issue",
+    "Firmware issue",
+    "Inconclusive",
+)
+
+
+class TriageReport(models.Model):
+    """The triage agent's structured analysis of one failed test, for the triage report page.
+
+    Replaced whenever triage is re-published; people review and decide in the workbook Verdict.
+    """
+
+    test_result = models.OneToOneField(
+        TestResult, on_delete=models.CASCADE, related_name="triage_report"
+    )
+    classification = models.CharField(max_length=40, db_index=True)
+    suggested_verdict = models.CharField(max_length=40, blank=True)
+    confidence = models.CharField(max_length=10, blank=True)
+    signature = models.CharField(max_length=64, blank=True)
+    data = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["test_result__test_case__name"]
+
+    def __str__(self):
+        return f"{self.test_result}: {self.classification}"

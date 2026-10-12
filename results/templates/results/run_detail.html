@@ -12,6 +12,7 @@
     {% if triage_published_at %}<p class="muted triage-note">Triage for {{ triage_failures }} failure{{ triage_failures|pluralize }} published {{ triage_published_at|timesince }} ago{% if triage_ai_model %} · AI model {{ triage_ai_model }}{% endif %}.</p>{% endif %}
   </div>
   <div class="workbook-downloads">
+    {% if triage_report_count %}<a class="button" href="{% url 'run-triage-report' run.job.board.slug run.job.name run.build_number %}">Triage report ({{ triage_report_count }})</a>{% endif %}
     {% if build_url %}<a class="button secondary" href="{{ build_url }}" target="_blank" rel="noopener">Open in Jenkins</a>{% endif %}
     <a class="button" href="{% url 'run-workbook-xlsx' run.job.board.slug run.job.name run.build_number %}">Download Triage Report</a>
     {% if request.user.is_staff %}<button class="button secondary danger" type="button" data-dialog-open="delete-run-dialog">Delete from portal</button>{% endif %}

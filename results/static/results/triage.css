@@ -1,0 +1,71 @@
+/* Triage report page. Uses the portal's colour tokens from portal.css. */
+.tr-lead{font-size:16px;margin:10px 0 4px;color:var(--text)}
+.tr-board{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;padding:14px 18px;margin-bottom:16px}
+.tr-board ul{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;padding:0;list-style:none}
+.tr-board li{color:var(--text);font-weight:600}
+
+.tr-classes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 22px}
+.tr-class-chip{display:inline-flex;gap:8px;align-items:center;padding:7px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);text-decoration:none;background:var(--surface);font-weight:650;font-size:13px}
+.tr-class-chip b{color:var(--text)}
+.tr-class-chip.active,.tr-class-chip:hover{border-color:var(--blue);color:var(--text)}
+.tr-search{margin-left:auto}
+.tr-search input{min-width:220px}
+
+.tone-fail{--tone:var(--red)}
+.tone-warn{--tone:var(--amber)}
+.tone-info{--tone:var(--blue)}
+.tone-muted{--tone:var(--muted)}
+
+.tr-section{margin:0 0 30px}
+.tr-section-head{border-left:4px solid var(--tone);padding:4px 0 4px 14px;margin-bottom:14px}
+.tr-section-head h2{display:inline;margin:0 12px 0 0;font-size:20px}
+.tr-section-head p{margin:6px 0 0;color:var(--muted);max-width:900px}
+
+.tr-card{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--tone);border-radius:14px;padding:18px 20px;margin:0 0 16px}
+.tr-card-head h3{margin:10px 0 4px;font-size:16px;word-break:break-word}
+.tr-chips{display:flex;flex-wrap:wrap;gap:6px}
+.tr-chip{display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;border:1px solid var(--line);color:var(--muted);text-decoration:none}
+.tr-chip.tone-fail,.tr-chip.tone-warn,.tr-chip.tone-info,.tr-chip.tone-muted{color:var(--tone);border-color:var(--tone)}
+.tr-chip.conf-high{color:var(--green);border-color:var(--green)}
+.tr-chip.conf-medium{color:var(--amber);border-color:var(--amber)}
+.tr-chip.conf-low{color:var(--red);border-color:var(--red)}
+.tr-chip.link{color:var(--cyan);border-color:var(--cyan)}
+.tr-suggested{margin:2px 0 0;color:var(--muted)}
+.tr-suggested strong{color:var(--text)}
+
+.tr-answer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:14px 0 4px}
+.tr-answer section{background:var(--surface2);border-radius:10px;padding:12px 14px}
+.tr-answer h4,.tr-evidence h4{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tr-answer p{margin:0;line-height:1.5}
+
+.tr-spec{margin:14px 0 6px;padding:10px 14px;border-left:3px solid var(--cyan);background:rgba(53,208,186,.06);border-radius:0 10px 10px 0}
+.tr-spec.missing{border-left-color:var(--red);background:rgba(255,107,120,.06)}
+.tr-spec p{margin:0 0 6px;font-style:italic;line-height:1.5}
+.tr-spec cite{font-style:normal;font-size:12px;color:var(--muted)}
+.tr-spec .ok{color:var(--green);font-weight:700}
+.tr-spec .bad{color:var(--red);font-weight:700}
+.tr-checked{margin:6px 0 0;font-size:13px;color:var(--amber)}
+
+.tr-evidence{margin:12px 0 10px;border-top:1px solid var(--line);padding-top:10px}
+.tr-evidence summary{cursor:pointer;color:var(--blue);font-weight:650}
+.tr-evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
+.tr-evidence-grid .wide{grid-column:1/-1}
+.tr-evidence p{margin:6px 0}
+.tr-values{border-collapse:collapse;width:100%;font-size:13px}
+.tr-values th,.tr-values td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}
+.tr-values thead th{color:var(--muted);font-weight:600}
+.tr-code{margin:0;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow-x:auto;font-size:12px;line-height:1.5;max-height:420px}
+.tr-code span{display:inline-block;min-width:100%}
+.tr-code .mark{background:rgba(245,189,88,.18);color:var(--text);font-weight:700}
+.tr-meta{font-size:12px}
+
+.tr-tests{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+.tr-tests th,.tr-tests td{border-top:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:middle}
+.tr-tests thead th{color:var(--muted);font-weight:600}
+.tr-person{font-size:11px;color:var(--cyan);margin-left:6px}
+
+@media (max-width:900px){
+  .tr-answer,.tr-evidence-grid{grid-template-columns:1fr}
+  .tr-search{margin-left:0;width:100%}
+  .tr-search input{width:100%;min-width:0}
+}

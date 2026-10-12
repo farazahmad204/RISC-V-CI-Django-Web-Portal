@@ -23,6 +23,11 @@ urlpatterns = [
         name="run-workbook",
     ),
     path(
+        "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/triage/",
+        workbook.triage_report,
+        name="run-triage-report",
+    ),
+    path(
         "boards/<slug:slug>/jobs/<str:job_name>/runs/<int:build_number>/workbook/export.xlsx",
         workbook.export_workbook_xlsx,
         name="run-workbook-xlsx",

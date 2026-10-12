@@ -22,6 +22,7 @@ from .models import (
     Status,
     TestResult,
     TestRun,
+    TriageReport,
 )
 from .models import TestCase as ACTTestCase
 
@@ -1356,3 +1357,96 @@ class IngestFieldLimitTests(TestCase):
         self.assertEqual(response.status_code, 201)
         case = ACTTestCase.objects.get(name=long_name)
         self.assertEqual(case.extension, long_name[:80])
+
+
+class TriageReportPageTests(TestCase):
+    REPORT = {
+        "classification": "Implementation-defined behavior",
+        "suggested_verdict": "Known deviation",
+        "confidence": "high",
+        "explained_by": "SUCCESS",
+        "failure_reason": "The core reported cause 6 where Sail expected 15.",
+        "root_cause": "Priv 1.11 orders misaligned above page fault.",
+        "next_step": "Set the Sail misaligned priority for this board.",
+        "instruction": {"at": "0x80000714: 00f6a02f  amoadd.w zero,a5,(a3)",
+                        "window": ["0x80000710: nop", "0x80000714: amoadd.w   <== failing"]},
+        "test_code": {"code": "   50  li a3, 1\n   51> Label:\n   52  amoadd.w zero,a5,(a3)",
+                      "header": ["# REQUIRED_EXTENSIONS: ['I', 'Zaamo']"]},
+        "comparisons": [{"what": "Signature value", "expected": "0xf", "observed": "0x6"}],
+        "spec": {"version": "priv-1.11", "label": "Privileged ISA 1.11", "quote": "Store/AMO address misaligned",
+                 "check": "verified"},
+        "board_versions": {"priv": "Privileged ISA 1.11 (Ratified, 20190608)"},
+    }
+
+    def setUp(self):
+        board = Board.objects.create(slug="visionfive2", name="VisionFive 2")
+        job = JenkinsJob.objects.create(board=board, name="vf2-uart-weekly")
+        self.run = TestRun.objects.create(job=job, build_number=6)
+        for name, status in (("Zaamo_S-00", Status.FAIL), ("Zaamo_U-00", Status.FAIL),
+                             ("Other-00", Status.FAIL), ("Fine-00", Status.PASS)):
+            TestResult.objects.create(run=self.run, test_case=ACTTestCase.objects.create(name=name),
+                                      hardware_status=status)
+        self.user = get_user_model().objects.create_user("viewer", password="safe-test-password")
+        self.args = ["visionfive2", "vf2-uart-weekly", 6]
+
+    def _publish(self):
+        other = {"classification": "Made up class", "root_cause": "?", "suggested_verdict": "Needs investigation"}
+        items = [
+            {"name": "Zaamo_S-00", "triage_signature": "sig-a", "verdict": "Known deviation",
+             "report": self.REPORT},
+            {"name": "Zaamo_U-00", "triage_signature": "sig-a", "report": self.REPORT},
+            {"name": "Other-00", "triage_signature": "sig-b", "report": other},
+            {"name": "Fine-00", "report": self.REPORT},
+        ]
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            return self.client.post(reverse("api-ingest-triage"),
+                                    data=json.dumps({"job_name": "vf2-uart-weekly", "build_number": 6,
+                                                     "results": items}),
+                                    content_type="application/json",
+                                    headers={"X-Portal-Token": "test-token"})
+
+    def test_reports_are_stored_for_failures_with_a_known_class(self):
+        self.assertEqual(self._publish().status_code, 200)
+        reports = {r.test_result.test_case.name: r for r in TriageReport.objects.all()}
+        self.assertEqual(sorted(reports), ["Other-00", "Zaamo_S-00", "Zaamo_U-00"])
+        self.assertEqual(reports["Other-00"].classification, "Inconclusive")
+        self.assertEqual(self.run.__class__.objects.get(pk=self.run.pk).metadata["triage"]["classes"],
+                         {"Implementation-defined behavior": 2, "Inconclusive": 1})
+        self._publish()  # re-publishing replaces, not duplicates
+        self.assertEqual(TriageReport.objects.count(), 3)
+
+    def test_page_groups_tests_by_root_cause_and_shows_the_evidence(self):
+        self._publish()
+        self.client.force_login(self.user)
+        page = self.client.get(reverse("run-triage-report", args=self.args))
+        self.assertEqual(page.status_code, 200)
+        html = page.content.decode()
+        self.assertIn("come down to <strong>2 root causes</strong>", html)
+        self.assertIn("Zaamo_S-00, Zaamo_U-00", html)  # one card for the shared signature
+        self.assertIn("Priv 1.11 orders misaligned above page fault.", html)
+        self.assertIn("✓ quote verified in this version", html)
+        self.assertIn('<span class="mark">   51&gt; Label:</span>', html)
+        self.assertIn("Privileged ISA 1.11 (Ratified, 20190608)", html)
+        self.assertLess(html.index("Implementation-defined behavior"), html.index(">Inconclusive<"))
+        filtered = self.client.get(reverse("run-triage-report", args=self.args) + "?class=Inconclusive")
+        self.assertNotIn("Zaamo_S-00", filtered.content.decode())
+        run_page = self.client.get(reverse("run-detail", args=self.args)).content.decode()
+        self.assertIn("Triage report (3)", run_page)
+
+    def test_page_without_reports_explains_how_to_get_one(self):
+        self.client.force_login(self.user)
+        html = self.client.get(reverse("run-triage-report", args=self.args)).content.decode()
+        self.assertIn("No triage report yet", html)
+
+    def test_download_has_a_triage_report_sheet(self):
+        self._publish()
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("run-workbook-xlsx", args=self.args))
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(response.content)) as book:
+            workbook_xml = book.read("xl/workbook.xml").decode()
+            self.assertIn('name="Triage report"', workbook_xml)
+            strings = book.read("xl/sharedStrings.xml").decode() if "xl/sharedStrings.xml" in book.namelist() \
+                else "".join(book.read(n).decode() for n in book.namelist() if n.startswith("xl/worksheets/"))
+            self.assertIn("Implementation-defined behavior", strings)

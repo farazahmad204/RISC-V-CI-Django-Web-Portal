@@ -1,0 +1,89 @@
+{% extends "results/base.html" %}
+{% load static %}
+{% block title %}Triage report · {{ run.job.board.name }} #{{ run.build_number }} · {{ portal_name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'results/triage.css' %}?v=20261012a">
+<nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{{ run.job.board.get_absolute_url }}">{{ run.job.board.name }}</a><span>/</span><a href="{{ run.get_absolute_url }}">Build #{{ run.build_number }}</a><span>/</span><span>Triage report</span></nav>
+
+<section class="hero compact run-hero">
+  <div>
+    <p class="eyebrow">{{ run.job.name }} · Triage report</p>
+    <h1>Build #{{ run.build_number }} <span class="badge large status-{{ run.status|lower }}">{{ run.get_status_display }}</span></h1>
+    {% if has_reports %}
+    <p class="tr-lead">{{ failures }} failed test{{ failures|pluralize }} come down to <strong>{{ root_causes }} root cause{{ root_causes|pluralize }}</strong>. Each card below is one root cause; tests that fail the same way share a card.</p>
+    <p class="muted">{% if published_at %}Analyzed {{ published_at|timesince }} ago{% endif %}{% if ai_model %} · AI model {{ ai_model }}{% endif %}{% for name, count in explained %} · {{ count }} by {{ name|lower }}{% endfor %}</p>
+    {% endif %}
+  </div>
+  <div class="workbook-downloads">
+    <a class="button secondary" href="{{ run.get_absolute_url }}">Open workbook</a>
+    <a class="button" href="{% url 'run-workbook-xlsx' run.job.board.slug run.job.name run.build_number %}">Download Triage Report</a>
+  </div>
+</section>
+
+{% if not has_reports %}
+<section class="panel empty-state"><h2>No triage report yet</h2><p class="muted">This run has no structured triage analysis. It appears after the triage job (or the weekly job's triage step) runs with the current triage agent. Rerun <code>riscv-uart-triage</code> for this build to create it.</p></section>
+{% else %}
+
+{% if board_versions %}<section class="panel tr-board"><span class="eyebrow">Judged against what this board implements</span><ul>{% for role, label in board_versions.items %}<li>{{ label }}</li>{% endfor %}</ul></section>{% endif %}
+
+<nav class="tr-classes" aria-label="Root-cause classes">
+  <a class="tr-class-chip{% if not selected %} active{% endif %}" href="?{% if query %}q={{ query|urlencode }}{% endif %}">All <b>{{ failures }}</b></a>
+  {% for item in classes %}<a class="tr-class-chip tone-{{ item.tone }}{% if selected == item.name %} active{% endif %}" href="?class={{ item.name|urlencode }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ item.name }} <b>{{ item.count }}</b></a>{% endfor %}
+  <form method="get" class="tr-search">{% if selected %}<input type="hidden" name="class" value="{{ selected }}">{% endif %}<input type="search" name="q" value="{{ query }}" placeholder="Search test name" aria-label="Search test name"></form>
+</nav>
+
+{% for section in sections %}
+<section class="tr-section" id="{{ section.slug }}">
+  <header class="tr-section-head tone-{{ section.tone }}"><h2>{{ section.name }}</h2><span class="muted">{{ section.tests }} test{{ section.tests|pluralize }} · {{ section.cards|length }} root cause{{ section.cards|length|pluralize }}</span><p>{{ section.help }}</p></header>
+  {% for card in section.cards %}{% with r=card.report %}
+  <article class="tr-card tone-{{ section.tone }}">
+    <header class="tr-card-head">
+      <div class="tr-chips">
+        <span class="tr-chip tone-{{ section.tone }}">{{ card.classification }}</span>
+        {% if card.confidence %}<span class="tr-chip conf-{{ card.confidence }}">{{ card.confidence|capfirst }} confidence</span>{% endif %}
+        {% if r.explained %}<span class="tr-chip plain">{{ r.explained }}</span>{% endif %}
+        {% if r.known_issue.id %}{% if r.known_issue.url %}<a class="tr-chip link" href="{{ r.known_issue.url }}" target="_blank" rel="noopener">{{ r.known_issue.id }} ↗</a>{% else %}<span class="tr-chip link">{{ r.known_issue.id }}</span>{% endif %}{% endif %}
+      </div>
+      <h3>{% for test in card.tests|slice:":3" %}{{ test.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if card.tests|length > 3 %} <span class="muted">+{{ card.tests|length|add:"-3" }} more</span>{% endif %}</h3>
+      {% if card.suggested_verdict %}<p class="tr-suggested">Suggested verdict: <strong>{{ card.suggested_verdict }}</strong>{% if card.classification == "DUT noncompliance" %} <span class="muted">(a person confirms hardware bugs in the workbook)</span>{% endif %}</p>{% endif %}
+    </header>
+
+    <div class="tr-answer">
+      <section><h4>What failed</h4><p>{{ r.failure_reason|default:r.failure|default:"—" }}</p></section>
+      <section><h4>Root cause</h4><p>{{ r.root_cause|default:"—" }}</p></section>
+      <section><h4>What to do</h4><p>{{ r.next_step|default:"—" }}</p></section>
+    </div>
+
+    {% if r.spec.quote %}<blockquote class="tr-spec{% if r.spec_missing %} missing{% endif %}"><p>“{{ r.spec.quote }}”</p><cite>{{ r.spec.label|default:r.spec.version }} · {% if r.spec_verified %}<span class="ok">✓ quote verified in this version</span>{% elif r.spec_missing %}<span class="bad">⚠ quote not found in this version</span>{% else %}not checked{% endif %}</cite></blockquote>{% endif %}
+    {% if r.checked %}<p class="tr-checked">Checked by the agent: {{ r.checked }}</p>{% endif %}
+
+    <details class="tr-evidence">
+      <summary>Evidence: failing instruction, test code and values</summary>
+      <div class="tr-evidence-grid">
+        {% if r.comparisons or r.trap.cause or r.differing_fields.fields or r.failure or r.check %}<section>
+          <h4>Expected vs observed</h4>
+          {% if r.comparisons %}<table class="tr-values"><thead><tr><th></th><th>Expected</th><th>Observed</th></tr></thead><tbody>{% for row in r.comparisons %}<tr><th>{{ row.what }}</th><td><code>{{ row.expected|default:"—" }}</code></td><td><code>{{ row.observed|default:"—" }}</code></td></tr>{% endfor %}</tbody></table>{% endif %}
+          {% if r.differing_fields.fields %}<p>Differing <code>{{ r.differing_fields.csr }}</code> fields: {{ r.differing_fields.fields|join:", " }}</p>{% endif %}
+          {% if r.trap.cause %}<p>Trap: cause <code>{{ r.trap.cause }}</code>{% if r.trap.cause_name %} ({{ r.trap.cause_name }}){% endif %}{% if r.trap.epc %} at <code>{{ r.trap.epc }}</code>{% endif %}{% if r.trap.tval %}, tval <code>{{ r.trap.tval }}</code>{% endif %}{% if r.trap.handled_in %}, handled in {{ r.trap.handled_in }}{% endif %}</p>{% endif %}
+          {% if r.failure %}<p class="muted">{{ r.failure }}</p>{% endif %}
+          {% if r.check %}<p class="muted">Check: <code>{{ r.check }}</code></p>{% endif %}
+        </section>{% endif %}
+        {% if r.instruction_lines %}<section><h4>Failing instruction{% if r.instruction.source_line %} <span class="muted">(test source line {{ r.instruction.source_line }})</span>{% endif %}</h4><pre class="tr-code">{% for line in r.instruction_lines %}<span class="{% if line.mark %}mark{% endif %}">{{ line.text }}</span>
+{% endfor %}</pre></section>{% endif %}
+        {% if r.code_lines %}<section class="wide"><h4>What the test does at the failing check</h4>{% if r.code_header %}<p class="muted">{{ r.code_header|join:" · " }}</p>{% endif %}<pre class="tr-code">{% for line in r.code_lines %}<span class="{% if line.mark %}mark{% endif %}">{{ line.text }}</span>
+{% endfor %}</pre></section>{% endif %}
+      </div>
+      <p class="muted tr-meta">{% if r.source %}Source: {{ r.source }}{% endif %}{% if r.act_revision %} · {{ r.act_revision }}{% endif %}</p>
+    </details>
+
+    <table class="tr-tests"><thead><tr><th>Test</th><th>Verdict in the workbook</th><th>UART log</th></tr></thead><tbody>
+      {% for test in card.tests %}<tr><td>{{ test.name }}</td><td>{% if test.verdict %}{{ test.verdict }}{% if test.verdict_source == "person" %} <span class="tr-person">set by a person</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td><td>{% if test.result.log_url %}<a class="button secondary small" href="{{ test.result.log_url }}" target="_blank" rel="noopener">UART</a>{% else %}—{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+  </article>
+  {% endwith %}{% endfor %}
+</section>
+{% empty %}
+<section class="panel empty-state"><p>No failures match these filters. <a href="?">Show all</a></p></section>
+{% endfor %}
+{% endif %}
+{% endblock %}
