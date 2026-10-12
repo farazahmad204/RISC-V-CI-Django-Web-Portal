@@ -730,12 +730,13 @@ REPORT_DEFAULTS = {
     "failure_reason": "", "root_cause": "", "next_step": "", "failure": "", "check": "",
     "checked": "", "source": "", "act_revision": "", "comparisons": [], "trap": {},
     "differing_fields": {}, "known_issue": {}, "spec": {}, "instruction": {}, "test_code": {},
+    "reference": {},
 }
 
 
 def _card_data(report):
     data = {**REPORT_DEFAULTS, **(report.data or {})}
-    for key in ("known_issue", "spec", "instruction", "test_code", "trap", "differing_fields"):
+    for key in ("known_issue", "spec", "instruction", "test_code", "trap", "differing_fields", "reference"):
         if not isinstance(data.get(key), dict):
             data[key] = {}
     test_code = data.get("test_code") or {}
@@ -753,6 +754,8 @@ def _card_data(report):
         "differing_fields": {"csr": "", "fields": [], **(data.get("differing_fields") or {})},
         "trap": {"cause": "", "cause_name": "", "epc": "", "tval": "", "handled_in": "",
                  **(data.get("trap") or {})},
+        "reference": {"executed": False, "label": "", "mode": "", "at": "", "result": [], "setup": [],
+                      "note": "", "window": [], **(data.get("reference") or {})},
         "spec_verified": spec.get("check") == "verified",
         "spec_missing": spec.get("check") == "not_found",
     }

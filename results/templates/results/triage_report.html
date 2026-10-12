@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}Triage report · {{ run.job.board.name }} #{{ run.build_number }} · {{ portal_name }}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'results/triage.css' %}?v=20261012a">
+<link rel="stylesheet" href="{% static 'results/triage.css' %}?v=20261012b">
 <nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{{ run.job.board.get_absolute_url }}">{{ run.job.board.name }}</a><span>/</span><a href="{{ run.get_absolute_url }}">Build #{{ run.build_number }}</a><span>/</span><span>Triage report</span></nav>
 
 <section class="hero compact run-hero">
@@ -58,7 +58,7 @@
     {% if r.checked %}<p class="tr-checked">Checked by the agent: {{ r.checked }}</p>{% endif %}
 
     <details class="tr-evidence">
-      <summary>Evidence: failing instruction, test code and values</summary>
+      <summary>Evidence: failing instruction, reference model, test code and values</summary>
       <div class="tr-evidence-grid">
         {% if r.comparisons or r.trap.cause or r.differing_fields.fields or r.failure or r.check %}<section>
           <h4>Expected vs observed</h4>
@@ -70,6 +70,18 @@
         </section>{% endif %}
         {% if r.instruction_lines %}<section><h4>Failing instruction{% if r.instruction.source_line %} <span class="muted">(test source line {{ r.instruction.source_line }})</span>{% endif %}</h4><pre class="tr-code">{% for line in r.instruction_lines %}<span class="{% if line.mark %}mark{% endif %}">{{ line.text }}</span>
 {% endfor %}</pre></section>{% endif %}
+        {% if r.reference.at or r.reference.note %}<section class="wide tr-reference"><h4>What the reference model (Sail) did at this instruction</h4>
+          {% if r.reference.executed %}
+          <p class="muted">Same instruction in the Sail build ({{ r.reference.label }}){% if r.reference.mode %}, in {{ r.reference.mode }} mode{% endif %}, with this board's sail.json:</p>
+          <pre class="tr-code"><span class="mark">{{ r.reference.at }}</span>
+{% for line in r.reference.result %}<span class="mark">  {{ line }}</span>
+{% endfor %}</pre>
+          {% if r.reference.setup %}<p class="muted">Earlier in the reference run (writes to the same CSRs, device stores):</p><pre class="tr-code">{% for line in r.reference.setup %}{{ line }}
+{% endfor %}</pre>{% endif %}
+          {% if r.reference.window %}<details><summary>Instructions just before it in the reference run</summary><pre class="tr-code">{% for line in r.reference.window %}{{ line }}
+{% endfor %}</pre></details>{% endif %}
+          {% else %}<p>{{ r.reference.note }}{% if r.reference.label %} <span class="muted">({{ r.reference.label }})</span>{% endif %}</p>{% endif %}
+        </section>{% endif %}
         {% if r.code_lines %}<section class="wide"><h4>What the test does at the failing check</h4>{% if r.code_header %}<p class="muted">{{ r.code_header|join:" · " }}</p>{% endif %}<pre class="tr-code">{% for line in r.code_lines %}<span class="{% if line.mark %}mark{% endif %}">{{ line.text }}</span>
 {% endfor %}</pre></section>{% endif %}
       </div>
