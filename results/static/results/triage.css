@@ -69,3 +69,5 @@
   .tr-search{margin-left:0;width:100%}
   .tr-search input{width:100%;min-width:0}
 }
+.tr-reference details summary{cursor:pointer;color:var(--muted);font-size:13px;margin:6px 0}
+.tr-reference pre{margin-top:6px}

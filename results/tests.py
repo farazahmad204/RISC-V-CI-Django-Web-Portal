@@ -1373,6 +1373,10 @@ class TriageReportPageTests(TestCase):
         "test_code": {"code": "   50  li a3, 1\n   51> Label:\n   52  amoadd.w zero,a5,(a3)",
                       "header": ["# REQUIRED_EXTENSIONS: ['I', 'Zaamo']"]},
         "comparisons": [{"what": "Signature value", "expected": "0xf", "observed": "0x6"}],
+        "reference": {"executed": True, "label": "Check+0x0", "mode": "HS",
+                      "at": "[7] [HS]: 0x90000168 (0x144026F3) csrrs a3, sip, zero",
+                      "result": ["CSR sip (0x144) -> 0x0000000000002222"],
+                      "setup": ["mem[W,0x000000000C000004] <- 0x80000002"], "window": ["[6] ..."]},
         "spec": {"version": "priv-1.11", "label": "Privileged ISA 1.11", "quote": "Store/AMO address misaligned",
                  "check": "verified"},
         "board_versions": {"priv": "Privileged ISA 1.11 (Ratified, 20190608)"},
@@ -1427,6 +1431,9 @@ class TriageReportPageTests(TestCase):
         self.assertIn("✓ quote verified in this version", html)
         self.assertIn('<span class="mark">   51&gt; Label:</span>', html)
         self.assertIn("Privileged ISA 1.11 (Ratified, 20190608)", html)
+        self.assertIn("What the reference model (Sail) did at this instruction", html)
+        self.assertIn("CSR sip (0x144) -&gt; 0x0000000000002222", html)
+        self.assertIn("mem[W,0x000000000C000004] &lt;- 0x80000002", html)
         self.assertLess(html.index("Implementation-defined behavior"), html.index(">Inconclusive<"))
         filtered = self.client.get(reverse("run-triage-report", args=self.args) + "?class=Inconclusive")
         self.assertNotIn("Zaamo_S-00", filtered.content.decode())
