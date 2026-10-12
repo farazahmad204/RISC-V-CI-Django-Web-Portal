@@ -24,6 +24,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .models import (
+    TRIAGE_CLASSES,
     TRIAGE_COLUMNS,
     VERDICT_CHOICES,
     VERDICT_KEY,
@@ -33,6 +34,7 @@ from .models import (
     Status,
     TestResult,
     TestRun,
+    TriageReport,
     jenkins_link,
 )
 from .views import SUITE_CATEGORIES, _authorized, _require_run_access, _run_for_job
@@ -228,6 +230,7 @@ def run_page(request, slug, job_name, build_number):
             "triage_published_at": parse_datetime(str(triage.get("published_at", ""))),
             "triage_failures": triage.get("failures"),
             "triage_ai_model": triage.get("ai_model", ""),
+            "triage_report_count": TriageReport.objects.filter(test_result__run=run).count(),
         },
     )
 
@@ -428,6 +431,11 @@ def export_workbook_xlsx(request, slug, job_name, build_number):
     failed = [r for r in results if r.hardware_status == Status.FAIL]
     if failed:
         sheets.insert(1, ("Failures", table(failed), {"widths": widths, "freeze": True}))
+    report_rows = _report_sheet(run)
+    if report_rows:
+        sheets.insert(1, ("Triage report", report_rows, {
+            "widths": [38, 26, 24, 24, 10, 60, 60, 50, 40, 22, 22, 26, 60, 12, 18, 18],
+            "freeze": True}))
     sheets.insert(0, ("Summary", summary, {"widths": [16, 22, 10, 10, 10, 10, 10]}))
 
     response = HttpResponse(
@@ -437,6 +445,39 @@ def export_workbook_xlsx(request, slug, job_name, build_number):
     filename = f"{slugify(run.job.name)}-{run.build_number}-triage-report.xlsx"
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+def _report_sheet(run):
+    """One row per failed test: the triage agent's structured analysis."""
+    reports = TriageReport.objects.filter(test_result__run=run).select_related(
+        "test_result__test_case")
+    if not reports:
+        return []
+    verdict_column = run.analysis_columns.filter(key=VERDICT_KEY).first()
+    verdicts = {v.test_result_id: v.value for v in AnalysisValue.objects.filter(column=verdict_column)} \
+        if verdict_column else {}
+    header = ["Test", "Root-cause class", "Suggested verdict", "Verdict (workbook)", "Confidence",
+              "What failed", "Root cause", "What to do", "Failing instruction", "Expected",
+              "Observed", "Spec version", "Spec quote", "Quote check", "Known issue", "Explained by"]
+    rows = [[(name, "header") for name in header]]
+    order = {name: index for index, name in enumerate(TRIAGE_CLASSES)}
+    for report in sorted(reports, key=lambda r: (order.get(r.classification, 99),
+                                                 r.test_result.test_case.name)):
+        data = report.data or {}
+        first = (data.get("comparisons") or [{}])[0]
+        spec = data.get("spec") or {}
+        rows.append([
+            report.test_result.test_case.name, report.classification, report.suggested_verdict,
+            verdicts.get(report.test_result_id, ""), report.confidence,
+            data.get("failure_reason", ""), data.get("root_cause", ""), data.get("next_step", ""),
+            (data.get("instruction") or {}).get("at", ""), first.get("expected", ""),
+            first.get("observed", ""), spec.get("label") or spec.get("version", ""),
+            spec.get("quote", ""), {"verified": "verified", "not_found": "NOT FOUND"}.get(
+                spec.get("check", ""), ""),
+            (data.get("known_issue") or {}).get("id", ""),
+            EXPLAINED_BY.get(str(data.get("explained_by", "")), data.get("explained_by", "")),
+        ])
+    return rows
 
 
 def _evidence_text(evidence):
@@ -454,6 +495,28 @@ def _evidence_text(evidence):
             value = json.dumps(value)
         lines.append(f"{key}: {value}")
     return "\n".join(lines)
+
+
+MAX_REPORT_CHARS = 40000
+
+
+def _clean_report(report):
+    """A triage report as stored: a known class, and bounded in size."""
+    if not isinstance(report, dict) or not report:
+        return None
+    report = dict(report)
+    if report.get("classification") not in TRIAGE_CLASSES:
+        report["classification"] = "Inconclusive"
+    text = json.dumps(report)
+    if len(text) > MAX_REPORT_CHARS:  # drop the bulkiest parts first
+        for key in ("test_code", "instruction", "checked"):
+            report.pop(key, None)
+            if len(json.dumps(report)) <= MAX_REPORT_CHARS:
+                break
+        else:
+            return {"classification": report["classification"],
+                    "root_cause": str(report.get("root_cause", ""))[:2000]}
+    return report
 
 
 @csrf_exempt
@@ -501,6 +564,7 @@ def ingest_triage(request):
             result.test_case.name: result for result in run.test_results.select_related("test_case")
         }
         signatures: dict[str, str] = {}
+        classes: Counter = Counter()
         for item in items:
             result = results.get(str(item["name"]))
             if result is None:
@@ -522,6 +586,19 @@ def ingest_triage(request):
                 )
             if item.get("triage_signature"):
                 signatures[result.test_case.name] = str(item["triage_signature"])[:64]
+            report = _clean_report(item.get("report"))
+            if report and result.hardware_status != Status.PASS:
+                TriageReport.objects.update_or_create(
+                    test_result=result,
+                    defaults={
+                        "classification": report["classification"],
+                        "suggested_verdict": str(report.get("suggested_verdict", ""))[:40],
+                        "confidence": str(report.get("confidence", ""))[:10],
+                        "signature": str(item.get("triage_signature") or "")[:64],
+                        "data": report,
+                    },
+                )
+                classes[report["classification"]] += 1
             for column, text in targets:
                 text = str(text or "").strip()[:MAX_VALUE_CHARS]
                 existing = AnalysisValue.objects.filter(column=column, test_result=result).first()
@@ -544,6 +621,7 @@ def ingest_triage(request):
             "failures": len(items) - len(unknown),
             "ai_model": next((str(i.get("ai_model")) for i in items if i.get("ai_model")), ""),
             "signatures": signatures,
+            "classes": dict(classes),
         }
         run.metadata = metadata
         run.save(update_fields=["metadata"])
@@ -613,3 +691,144 @@ def triage_feedback(request):
             entry["updated_by"] = value.updated_by.get_username()
         entry["updated_at"] = max(entry["updated_at"], value.updated_at.isoformat())
     return JsonResponse({"feedback": list(entries.values())})
+
+
+# ---------- triage report page ----------
+
+CLASS_HELP = {
+    "DUT noncompliance": ("The hardware violates a mandatory requirement of a specification "
+                          "version it implements. Suggested only: a person confirms it.", "fail"),
+    "Unsupported feature": ("The test assumes an extension or specification version the board "
+                            "does not implement.", "info"),
+    "Implementation-defined behavior": ("The specification allows more than one outcome; the "
+                                        "board chose another one than the reference.", "info"),
+    "Reference-model mismatch": ("Sail or Spike, or their configuration for this board, differ "
+                                 "from the applicable specification or the hardware.", "warn"),
+    "Test issue": ("The ACT test or its assumptions are wrong for this board.", "warn"),
+    "Environment issue": ("Memory layout, flashing, timing or test setup, such as the board's ACT "
+                          "macros.", "warn"),
+    "Firmware issue": ("Trap handling, privilege transitions, PMP, loader or runner.", "warn"),
+    "Inconclusive": ("The evidence does not establish a root cause yet.", "muted"),
+}
+EXPLAINED_BY = {
+    "VAULT": "Known-issue note",
+    "MEMORY": "Earlier analysis",
+    "RULE": "Board rule",
+    "SUCCESS": "AI analysis",
+    "ERROR": "AI failed",
+    "DISABLED": "Not analyzed",
+    "SKIPPED_LIMIT": "Not analyzed",
+}
+
+
+def _marked_lines(text, marker):
+    """Code lines for display, with the failing one flagged."""
+    return [{"text": line, "mark": marker in line} for line in str(text or "").splitlines()]
+
+
+REPORT_DEFAULTS = {
+    "failure_reason": "", "root_cause": "", "next_step": "", "failure": "", "check": "",
+    "checked": "", "source": "", "act_revision": "", "comparisons": [], "trap": {},
+    "differing_fields": {}, "known_issue": {}, "spec": {}, "instruction": {}, "test_code": {},
+}
+
+
+def _card_data(report):
+    data = {**REPORT_DEFAULTS, **(report.data or {})}
+    for key in ("known_issue", "spec", "instruction", "test_code", "trap", "differing_fields"):
+        if not isinstance(data.get(key), dict):
+            data[key] = {}
+    test_code = data.get("test_code") or {}
+    instruction = data.get("instruction") or {}
+    spec = data.get("spec") or {}
+    return {
+        **data,
+        "code_lines": _marked_lines(test_code.get("code"), ">"),
+        "code_header": test_code.get("header") or [],
+        "instruction_lines": _marked_lines("\n".join(instruction.get("window") or []), "<=="),
+        "explained": EXPLAINED_BY.get(str(data.get("explained_by", "")), data.get("explained_by", "")),
+        "spec": {"version": "", "label": "", "quote": "", "check": "", **spec},
+        "known_issue": {"id": "", "url": "", "title": "", **(data.get("known_issue") or {})},
+        "instruction": {"source_line": "", **instruction},
+        "differing_fields": {"csr": "", "fields": [], **(data.get("differing_fields") or {})},
+        "trap": {"cause": "", "cause_name": "", "epc": "", "tval": "", "handled_in": "",
+                 **(data.get("trap") or {})},
+        "spec_verified": spec.get("check") == "verified",
+        "spec_missing": spec.get("check") == "not_found",
+    }
+
+
+@login_required
+def triage_report(request, slug, job_name, build_number):
+    """The triage agent's analysis of a run's failures, one card per root cause."""
+    run = _run_for_job(slug, job_name, build_number)
+    _require_run_access(request.user, run)
+    reports = list(
+        TriageReport.objects.filter(test_result__run=run).select_related("test_result__test_case")
+    )
+    verdict_column = run.analysis_columns.filter(key=VERDICT_KEY).first()
+    verdicts = {}
+    if verdict_column:
+        verdicts = {
+            value.test_result_id: (value.value, value.source)
+            for value in AnalysisValue.objects.filter(column=verdict_column)
+        }
+    selected = request.GET.get("class", "")
+    query = request.GET.get("q", "").strip()
+
+    cards: dict[tuple, dict] = {}
+    for report in reports:
+        name = report.test_result.test_case.name
+        if query and query.lower() not in name.lower():
+            continue
+        data = report.data or {}
+        # One card per root cause: the known issue when there is one (its tests can differ in
+        # detail), else the failure signature, else the analysis text.
+        known = (data.get("known_issue") or {}).get("id") if isinstance(data.get("known_issue"), dict) else ""
+        key = (report.classification,
+               known or report.signature or str(data.get("root_cause", ""))[:300] or name)
+        card = cards.get(key)
+        if card is None:
+            card = cards[key] = {"report": _card_data(report), "tests": [],
+                                 "classification": report.classification,
+                                 "confidence": report.confidence,
+                                 "suggested_verdict": report.suggested_verdict}
+        verdict, source = verdicts.get(report.test_result_id, ("", ""))
+        card["tests"].append({"name": name, "result": report.test_result,
+                              "verdict": verdict, "verdict_source": source})
+    counts = Counter(card["classification"] for card in cards.values()
+                     for _ in card["tests"])
+    sections = []
+    for klass in TRIAGE_CLASSES:
+        in_class = sorted((c for c in cards.values() if c["classification"] == klass),
+                          key=lambda c: (-len(c["tests"]), c["tests"][0]["name"]))
+        if not in_class or (selected and selected != klass):
+            continue
+        help_text, tone = CLASS_HELP[klass]
+        sections.append({"name": klass, "slug": slugify(klass), "help": help_text, "tone": tone,
+                         "cards": in_class, "tests": counts[klass]})
+    classes = [{"name": k, "slug": slugify(k), "count": counts[k], "tone": CLASS_HELP[k][1]}
+               for k in TRIAGE_CLASSES if counts[k]]
+    explained = Counter(card["report"].get("explained", "") for card in cards.values()
+                        for _ in card["tests"])
+    board_versions = next((r.data.get("board_versions") for r in reports
+                           if (r.data or {}).get("board_versions")), {})
+    triage = (run.metadata or {}).get("triage") or {}
+    return render(
+        request,
+        "results/triage_report.html",
+        {
+            "run": run,
+            "sections": sections,
+            "classes": classes,
+            "selected": selected,
+            "query": query,
+            "failures": sum(counts.values()),
+            "root_causes": sum(len(s["cards"]) for s in sections),
+            "explained": [(name, count) for name, count in explained.most_common() if name],
+            "board_versions": board_versions,
+            "published_at": parse_datetime(str(triage.get("published_at", ""))),
+            "ai_model": triage.get("ai_model", ""),
+            "has_reports": bool(reports),
+        },
+    )
