@@ -202,6 +202,19 @@ def board_request_detail(request, request_id):
     })
 
 
+@login_required
+@require_POST
+def board_request_delete(request, request_id):
+    """Administrators remove a board request and its published result from the portal. The
+    Jenkins build, its artifacts and the agent's run directory stay."""
+    _admin(request.user)
+    board_request = get_object_or_404(BoardRequest, id=request_id)
+    label = f"{board_request.board_name} ({board_request.created_at:%b %d, %Y %H:%M})"
+    board_request.delete()
+    messages.success(request, f"Board request {label} was removed from the portal.")
+    return redirect("board-request-new")
+
+
 REPORTABLE = {Status.RUNNING, Status.ERROR, Status.ABORTED}
 
 

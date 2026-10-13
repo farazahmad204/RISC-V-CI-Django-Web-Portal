@@ -51,7 +51,7 @@
 </section>
 <section class="elf-history">
 <h2>Board requests</h2>
-<section class="panel table-panel"><table><thead><tr><th>Requested</th><th>User</th><th>Board</th><th>Status</th><th>Requirements</th><th>Jenkins</th></tr></thead><tbody>
+<section class="panel table-panel"><table><thead><tr><th>Requested</th><th>User</th><th>Board</th><th>Status</th><th>Requirements</th><th>Jenkins</th><th></th></tr></thead><tbody>
 {% for item in board_requests %}<tr>
   <td><a href="{{ item.get_absolute_url }}">{{ item.created_at|date:"M d, Y H:i" }}</a></td>
   <td>{{ item.requested_by.get_username }}</td>
@@ -59,8 +59,10 @@
   <td><span class="badge status-{{ item.status|lower }}">{% if item.status == "UNSTABLE" %}Needs a person{% elif item.status == "PASS" %}Firmware built{% else %}{{ item.get_status_display }}{% endif %}</span></td>
   <td>{% if item.result %}{{ item.result.requirements|length }} listed{% else %}<span class="muted">—</span>{% endif %}</td>
   <td>{% if item.jenkins_build_url or item.jenkins_queue_url %}<a class="button secondary small" href="{{ item.jenkins_build_link }}" target="_blank" rel="noopener">{% if item.jenkins_build_url %}Build{% else %}Queue{% endif %}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
-</tr>{% empty %}<tr><td colspan="6" class="empty">No board requests yet.</td></tr>{% endfor %}
+  <td class="run-action-cell"><button class="run-remove-button" type="button" data-dialog-open="delete-board-{{ item.id }}" title="Delete this board request" aria-label="Delete the {{ item.board_name }} request">&times;</button></td>
+</tr>{% empty %}<tr><td colspan="7" class="empty">No board requests yet.</td></tr>{% endfor %}
 </tbody></table></section>
+{% for item in board_requests %}{% url 'board-request-delete' item.id as delete_url %}{% include "results/_confirm_delete.html" with dialog_id="delete-board-" dialog_key=item.id action=delete_url title="Delete the "|add:item.board_name|add:" request?" text="This removes the request and its published result from the portal. The Jenkins build, its artifacts and the agent's run directory stay." %}{% endfor %}
 </section>
 <script>
 (function () {
