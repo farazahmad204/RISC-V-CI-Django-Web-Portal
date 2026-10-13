@@ -86,6 +86,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = os.getenv("PORTAL_TIME_ZONE", "Asia/Karachi")
+
+# Jenkins posts each run with every test's gzipped UART log, so a large run (123 hypervisor tests,
+# 2.8 MB) exceeds Django's 2.5 MB default and gets a bare "Bad Request (400)". Allow what nginx
+# allows in front of the portal (client_max_body_size 32m).
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("PORTAL_MAX_UPLOAD_MB", "32")) * 1024 * 1024
 USE_I18N = True
 USE_TZ = True
 
