@@ -1681,3 +1681,45 @@ class BoardRequestTests(TestCase):
         self.assertContains(page, "/artifact/board-pipeline-export/REPORT.md")
         self.client.force_login(self.viewer)
         self.assertEqual(self.client.get(board_request.get_absolute_url()).status_code, 403)
+
+
+class AdminDeleteTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user("delete-admin", password="safe-test-password",
+                                                          is_staff=True)
+        self.viewer = get_user_model().objects.create_user("delete-viewer", password="safe-test-password")
+
+    def test_admin_deletes_a_board_request(self):
+        board_request = BoardRequest.objects.create(requested_by=self.admin, board_name="Vendor X1",
+                                                    board_id="vendor_x1")
+        url = reverse("board-request-delete", args=[board_request.id])
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("board-request-new"))
+        self.assertContains(page, f'id="delete-board-{board_request.id}"')
+        self.assertEqual(self.client.get(url).status_code, 405)  # POST only
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.post(url).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertRedirects(self.client.post(url), reverse("board-request-new"))
+        self.assertFalse(BoardRequest.objects.exists())
+
+    def test_admin_deletes_an_elf_run_and_its_file(self):
+        board = Board.objects.create(slug="visionfive2", name="VisionFive 2")
+        with tempfile.TemporaryDirectory() as temporary, override_settings(MEDIA_ROOT=Path(temporary)):
+            submission = ElfSubmission.objects.create(
+                uploaded_by=self.viewer, board=board,
+                elf=SimpleUploadedFile("case.elf", b"\x7fELF"), original_name="case.elf",
+                sha256="0" * 64, size_bytes=4, download_token_hash="0" * 64,
+            )
+            stored = Path(submission.elf.path)
+            url = reverse("elf-submission-delete", args=[submission.id])
+            self.client.force_login(self.viewer)
+            self.assertNotContains(self.client.get(reverse("elf-submit")), "delete-elf-")
+            self.assertEqual(self.client.post(url).status_code, 403)
+            self.client.force_login(self.admin)
+            self.assertContains(self.client.get(reverse("elf-submit")), f'id="delete-elf-{submission.id}"')
+            self.assertContains(self.client.get(submission.get_absolute_url()), "Delete ELF run")
+            response = self.client.post(url)
+            self.assertRedirects(response, reverse("elf-submit") + "#history", fetch_redirect_response=False)
+            self.assertFalse(ElfSubmission.objects.exists())
+            self.assertFalse(stored.exists())

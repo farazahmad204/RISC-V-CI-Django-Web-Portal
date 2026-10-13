@@ -8,7 +8,7 @@
   <select name="status" aria-label="Status" data-autosubmit><option value="">All statuses</option>{% for value, label in statuses %}<option value="{{ value }}"{% if selected.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
   <button class="button secondary" type="submit">Apply</button>{% if selected.q or selected.user or selected.board or selected.status %}<a class="button secondary" href="{% url 'elf-submit' %}#history">Reset</a>{% endif %}
 </form>
-<section class="panel table-panel"><table><thead><tr><th>Submitted</th>{% if show_users %}<th>User</th>{% endif %}<th>ELF</th><th>Board</th><th>Status</th><th>Result</th><th>Jenkins</th></tr></thead><tbody>
+<section class="panel table-panel"><table><thead><tr><th>Submitted</th>{% if show_users %}<th>User</th>{% endif %}<th>ELF</th><th>Board</th><th>Status</th><th>Result</th><th>Jenkins</th>{% if request.user.is_staff %}<th></th>{% endif %}</tr></thead><tbody>
 {% for item in submissions %}<tr>
   <td><a href="{{ item.get_absolute_url }}">{{ item.created_at|date:"M d, Y H:i" }}</a></td>
   {% if show_users %}<td>{{ item.uploaded_by.get_username }}</td>{% endif %}
@@ -17,6 +17,8 @@
   <td><span class="badge status-{{ item.status|lower }}">{{ item.get_status_display }}</span>{% if item.status_reason %}<br><span class="muted">{{ item.status_reason|truncatechars:80 }}</span>{% endif %}</td>
   <td>{% if item.run %}<a class="button secondary small" href="{{ item.run.get_absolute_url }}">Result #{{ item.run.build_number }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
   <td>{% if item.jenkins_build_url or item.run %}<a class="button secondary small" href="{{ item.jenkins_build_link }}" target="_blank" rel="noopener">Build</a>{% elif item.jenkins_queue_url %}<a class="button secondary small" href="{{ item.jenkins_queue_link }}" target="_blank" rel="noopener">Queue</a>{% else %}<span class="muted">—</span>{% endif %}</td>
-</tr>{% empty %}<tr><td colspan="{% if show_users %}7{% else %}6{% endif %}" class="empty">No ELF runs match these filters.</td></tr>{% endfor %}
+  {% if request.user.is_staff %}<td class="run-action-cell"><button class="run-remove-button" type="button" data-dialog-open="delete-elf-{{ item.id }}" title="Delete this ELF run" aria-label="Delete {{ item.original_name }} from the portal">&times;</button></td>{% endif %}
+</tr>{% empty %}<tr><td colspan="{% if request.user.is_staff %}8{% elif show_users %}7{% else %}6{% endif %}" class="empty">No ELF runs match these filters.</td></tr>{% endfor %}
 </tbody></table></section>
+{% if request.user.is_staff %}{% for item in submissions %}{% url 'elf-submission-delete' item.id as delete_url %}{% include "results/_confirm_delete.html" with dialog_id="delete-elf-" dialog_key=item.id action=delete_url title="Delete "|add:item.original_name|add:"?" text="This removes the submission and its uploaded ELF from the portal. A published result run, the Jenkins build and its artifacts stay." %}{% endfor %}{% endif %}
 </section>

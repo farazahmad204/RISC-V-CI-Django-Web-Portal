@@ -507,6 +507,22 @@ def _store_uart_log(board_slug, job_name, build_number, test_name, encoded):
     return relative
 
 
+@login_required
+@require_POST
+def delete_elf_submission(request, submission_id):
+    """Administrators remove a Run ELF submission and its uploaded ELF. A published result run
+    stays (it has its own delete); a job still running can no longer report to it."""
+    if not request.user.is_staff:
+        raise PermissionDenied("Only portal administrators can delete ELF runs")
+    submission = get_object_or_404(ElfSubmission, id=submission_id)
+    label = f"{submission.original_name} ({submission.uploaded_by.get_username()})"
+    if submission.elf:
+        submission.elf.delete(save=False)
+    submission.delete()
+    messages.success(request, f"{label} was removed from the portal.")
+    return redirect(reverse("elf-submit") + "#history")
+
+
 def _authorized(request):
     configured = settings.PORTAL_INGEST_TOKEN
     supplied = request.headers.get("X-Portal-Token", "")

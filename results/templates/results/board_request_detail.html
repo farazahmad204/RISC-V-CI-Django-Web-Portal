@@ -77,6 +77,8 @@
 </tbody></table></section></section>
 {% endif %}
 
+<section class="panel danger-zone"><h2>Delete this request</h2><p class="muted">Removes the request and its result from the portal; the Jenkins build and artifacts stay.</p><p><button class="button danger" type="button" data-dialog-open="delete-board-request">Delete request</button></p></section>
+{% url 'board-request-delete' board_request.id as delete_url %}{% include "results/_confirm_delete.html" with dialog_id="delete-board-request" action=delete_url title="Delete the "|add:board_request.board_name|add:" request?" text="This removes the request and its published result from the portal. The Jenkins build, its artifacts and the agent's run directory stay." %}
 {% if pending %}<script>window.setTimeout(function(){ window.location.reload(); }, 15000);</script>{% endif %}
 <script>
 (function () {

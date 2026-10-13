@@ -11,8 +11,14 @@ urlpatterns = [
         views.elf_submission_detail,
         name="elf-submission-detail",
     ),
+    path(
+        "run-elf/<uuid:submission_id>/delete/",
+        views.delete_elf_submission,
+        name="elf-submission-delete",
+    ),
     path("onboard/", board_requests.board_request_new, name="board-request-new"),
     path("onboard/<uuid:request_id>/", board_requests.board_request_detail, name="board-request-detail"),
+    path("onboard/<uuid:request_id>/delete/", board_requests.board_request_delete, name="board-request-delete"),
     path("boards/<slug:slug>/", views.board_detail, name="board-detail"),
     path("boards/<slug:slug>/info/", views.board_info, name="board-info"),
     path(
