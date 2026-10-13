@@ -17,6 +17,7 @@ from .models import (
     AnalysisValue,
     Artifact,
     Board,
+    BoardRequest,
     ElfSubmission,
     JenkinsJob,
     Status,
@@ -1581,3 +1582,102 @@ class RunElfJobTests(TestCase):
         response = self.client.get(reverse("elf-history") + "?status=ERROR")
         self.assertRedirects(response, reverse("elf-submit") + "?status=ERROR#history",
                              fetch_redirect_response=False)
+
+
+class BoardRequestTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            "board-admin", password="safe-test-password", is_staff=True
+        )
+        self.viewer = get_user_model().objects.create_user("plain-viewer", password="safe-test-password")
+
+    def _submit(self, **fields):
+        data = {"board_name": "Vendor X1", "board_id": "vendor_x1", "soc": "X1 SoC",
+                "isa": "RV64IMAFDC_zicsr", "runner_hart": "1", "hint": "https://vendor.example",
+                "known_facts": "boot.medium: SD card\n# comment\nuart.base: 0x10000000", **fields}
+        return self.client.post(reverse("board-request-new"), data)
+
+    def test_only_administrators_see_the_page(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("board-request-new")).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("dashboard")), "New board")
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("board-request-new")), "Find requirements")
+        self.assertContains(self.client.get(reverse("dashboard")), "New board")
+
+    def test_submission_queues_the_pipeline_with_facts_only(self):
+        self.client.force_login(self.admin)
+        with patch("results.board_requests._trigger_jenkins_job",
+                   return_value="https://jenkins.example/queue/item/9/") as trigger:
+            response = self._submit()
+        board_request = BoardRequest.objects.get()
+        self.assertRedirects(response, board_request.get_absolute_url())
+        job, parameters = trigger.call_args.args
+        self.assertEqual(job, "riscv-board-pipeline")
+        self.assertEqual(parameters["REQUEST_ID"], str(board_request.id))
+        request = json.loads(parameters["BOARD_REQUEST_YAML"])
+        self.assertEqual(request["isa"], "rv64imafdc_zicsr")
+        self.assertTrue(request["find_docs"])
+        self.assertEqual(request["model"]["backend"], "codex")
+        self.assertEqual(request["user_answers"], {"boot.medium": "SD card", "uart.base": "0x10000000"})
+        self.assertEqual(request["runner_hart"], 1)
+        self.assertEqual(board_request.jenkins_queue_url, "https://jenkins.example/queue/item/9/")
+
+    def test_invalid_input_is_not_queued(self):
+        self.client.force_login(self.admin)
+        with patch("results.board_requests._trigger_jenkins_job") as trigger:
+            response = self._submit(board_id="Bad Id", known_facts="not a fact")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Board id")
+        self.assertContains(response, "Known facts, line 1")
+        trigger.assert_not_called()
+        self.assertFalse(BoardRequest.objects.exists())
+
+    @override_settings(PORTAL_INGEST_TOKEN="test-token")
+    def test_job_reports_status_and_result(self):
+        board_request = BoardRequest.objects.create(requested_by=self.admin, board_name="Vendor X1",
+                                                    board_id="vendor_x1")
+        status_url = reverse("api-board-request-status", args=[board_request.id])
+        result_url = reverse("api-board-request-result", args=[board_request.id])
+        self.assertEqual(self.client.post(status_url, "{}", content_type="application/json").status_code, 401)
+        response = self.client.post(
+            status_url, json.dumps({"status": "RUNNING", "build_url": "https://jenkins.example/job/b/3/"}),
+            content_type="application/json", headers={"X-Portal-Token": "test-token"})
+        self.assertEqual(response.json(), {"status": "RUNNING"})
+        result = {
+            "completion_state": "researching", "stop_reason": "spec: blockers",
+            "needs_person": ["Spec blocker: uart.base unknown"],
+            "steps": {"find_docs": {"status": "ok", "seconds": 300}, "build": {"status": "not_run"}},
+            "requirements": [
+                {"id": "boot.medium", "group": "boot", "status": "resolved", "value": "SD card",
+                 "source": "user", "needed_for": ["install"], "description": "Boot medium"},
+                {"id": "uart.base", "group": "uart", "status": "open", "value": None,
+                 "needed_for": ["offline_build"], "description": "Console UART MMIO base."},
+                {"id": "memory.dram_window", "group": "memory", "status": "resolved",
+                 "value": [{"base": "0x80000000"}], "needed_for": ["offline_build"], "description": "DRAM"},
+            ],
+            "documents_found": [{"title": "X1 TRM", "url": "https://vendor.example/trm.pdf",
+                                 "kind": "soc_trm", "status": "saved", "official": True}],
+            "runner": {"built": False},
+        }
+        response = self.client.post(result_url, json.dumps(result), content_type="application/json",
+                                    headers={"X-Portal-Token": "test-token"})
+        self.assertEqual(response.json(), {"status": "UNSTABLE"})
+        board_request.refresh_from_db()
+        self.assertEqual(board_request.jenkins_build_url, "https://jenkins.example/job/b/3/")
+        # A late status report does not undo a published result.
+        self.client.post(status_url, json.dumps({"status": "ERROR"}), content_type="application/json",
+                         headers={"X-Portal-Token": "test-token"})
+        board_request.refresh_from_db()
+        self.assertEqual(board_request.status, Status.UNSTABLE)
+
+        self.client.force_login(self.admin)
+        page = self.client.get(board_request.get_absolute_url())
+        self.assertContains(page, "Needs a person")
+        self.assertContains(page, "Spec blocker: uart.base unknown")
+        self.assertContains(page, "1/2</strong><span>firmware build inputs known")
+        self.assertContains(page, "X1 TRM")
+        self.assertContains(page, "0x80000000")
+        self.assertContains(page, "/artifact/board-pipeline-export/REPORT.md")
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(board_request.get_absolute_url()).status_code, 403)

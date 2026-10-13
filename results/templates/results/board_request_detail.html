@@ -1,0 +1,97 @@
+{% extends "results/base.html" %}
+{% block title %}{{ board_request.board_name }} · New board · {{ portal_name }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{% url 'board-request-new' %}">New board</a><span>/</span><span>{{ board_request.board_name }}</span></nav>
+<section class="hero compact"><div><p class="eyebrow">Board onboarding</p><h1>{{ board_request.board_name }}</h1><p class="muted">{{ board_request.soc|default:"Model not given" }} · <code>{{ board_request.board_id }}</code> · requested {{ board_request.created_at|date:"M d, Y H:i" }} by {{ board_request.requested_by.get_username }}</p></div><span class="badge large status-{{ board_request.status|lower }}">{% if board_request.status == "UNSTABLE" %}Needs a person{% elif board_request.status == "PASS" %}Firmware built{% else %}{{ board_request.get_status_display }}{% endif %}</span></section>
+
+<section class="two-column">
+  <article class="panel"><h2>Request</h2><dl class="detail-list">
+    <dt>Board id</dt><dd><code>{{ board_request.board_id }}</code></dd>
+    <dt>SoC / model</dt><dd>{{ board_request.soc|default:"—" }}</dd>
+    <dt>ISA</dt><dd>{{ board_request.isa|default:"—" }}</dd>
+    <dt>Runner hart</dt><dd>{{ board_request.runner_hart|default_if_none:"—" }}</dd>
+    {% if board_request.hint %}<dt>Other information</dt><dd class="cell-text">{{ board_request.hint }}</dd>{% endif %}
+    {% if board_request.known_facts %}<dt>Known facts</dt><dd>{% for key, value in board_request.known_facts.items %}<code>{{ key }}</code>: {{ value }}<br>{% endfor %}</dd>{% endif %}
+  </dl></article>
+  <article class="panel"><h2>Progress</h2>
+    {% if summary %}
+      <div class="onboard-stats">
+        <div><strong>{{ summary.build_answered }}/{{ summary.build_total }}</strong><span>firmware build inputs known</span></div>
+        <div><strong>{{ summary.answered }}/{{ summary.total }}</strong><span>requirements answered</span></div>
+        <div><strong>{{ summary.documents|length }}</strong><span>documents found</span></div>
+      </div>
+      <p class="muted">State: <strong>{{ summary.completion_state|default:"—" }}</strong>{% if summary.stop_reason %} · stopped: {{ summary.stop_reason }}{% endif %}</p>
+      {% if summary.runner.built %}<p>Runner built: <code>{{ summary.runner.build_id }}</code> · text/data/bss {{ summary.runner.text_data_bss|join:" / " }}<br><span class="muted">firmware.bin <code class="hash-value">{{ summary.runner.firmware_bin_sha256 }}</code></span></p>{% endif %}
+    {% elif board_request.status == "ERROR" or board_request.status == "ABORTED" %}
+      <p class="muted">The job ended without a result{% if board_request.status_reason %}: {{ board_request.status_reason }}{% endif %}.</p>
+    {% else %}
+      <p class="muted">{% if board_request.status == "RUNNING" %}The agent is searching for documents and answering requirements{% else %}Queued in Jenkins{% endif %}. This page refreshes automatically.</p>
+    {% endif %}
+    <p class="onboard-links">{% if board_request.jenkins_build_url or board_request.jenkins_queue_url %}<a class="button secondary" href="{{ board_request.jenkins_build_link }}" target="_blank" rel="noopener">Open Jenkins {% if board_request.jenkins_build_url %}build{% else %}queue item{% endif %}</a>{% endif %}
+    {% if summary and artifacts %}<a class="button secondary" href="{{ artifacts }}/REPORT.md" target="_blank" rel="noopener">REPORT.md</a><a class="button secondary" href="{{ artifacts }}/" target="_blank" rel="noopener">All files</a>{% endif %}</p>
+  </article>
+</section>
+
+{% if summary.needs_person %}
+<section class="panel onboard-section"><p class="eyebrow">Needs a person</p><h2>Open items before the firmware can be trusted</h2>
+  <ul class="onboard-checklist">{% for item in summary.needs_person %}<li>{{ item }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if summary.groups %}
+<section class="onboard-section">
+  <div class="section-heading"><div><p class="eyebrow">Runner requirements</p><h2>What the firmware and boot image need</h2></div>
+    <label class="onboard-toggle"><input type="checkbox" data-only-build> Firmware build inputs only</label></div>
+  {% for group in summary.groups %}
+  <section class="panel table-panel onboard-group" data-group>
+    <h3>{{ group.title }} <span class="muted">{{ group.answered }}/{{ group.rows|length }} answered</span></h3>
+    <table><thead><tr><th>Requirement</th><th>Value</th><th>Status</th><th>Source</th></tr></thead><tbody>
+    {% for row in group.rows %}<tr{% if row.build_input %} data-build-input{% endif %}>
+      <td class="onboard-req"><code>{{ row.id }}</code>{% if row.build_input %} <span class="badge">build</span>{% endif %}<br><span class="muted">{{ row.description }}</span></td>
+      <td class="onboard-value">{% if row.value is not None and row.value != "" %}{{ row.value }}{% else %}<span class="muted">unknown</span>{% endif %}</td>
+      <td><span class="badge status-{{ row.badge }}">{{ row.status|default:"open" }}</span>{% if row.evidence_status %}<br><span class="muted">{{ row.evidence_status }}</span>{% endif %}</td>
+      <td class="onboard-source">{{ row.source|default:"—" }}{% if row.via %}<br><span class="muted">via {{ row.via }}</span>{% endif %}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+  </section>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if summary.documents %}
+<section class="onboard-section"><div class="section-heading"><div><p class="eyebrow">Evidence</p><h2>Documents found</h2></div></div>
+<section class="panel table-panel"><table><thead><tr><th>Document</th><th>Kind</th><th>Publisher</th><th>Status</th></tr></thead><tbody>
+{% for doc in summary.documents %}<tr>
+  <td class="onboard-source"><a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer">{{ doc.title|default:doc.url }}</a>{% if doc.revision %}<br><span class="muted">{{ doc.revision }}</span>{% endif %}</td>
+  <td>{{ doc.kind }}</td>
+  <td>{{ doc.publisher|default:"—" }}{% if doc.official %} <span class="badge status-pass">official</span>{% endif %}</td>
+  <td><span class="badge status-{% if doc.status == 'saved' %}pass{% elif doc.status == 'rejected' or doc.status == 'failed' %}fail{% else %}skipped{% endif %}">{{ doc.status }}</span>{% if doc.note %}<br><span class="muted">{{ doc.note|truncatechars:90 }}</span>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></section></section>
+{% endif %}
+
+{% if summary.steps %}
+<section class="onboard-section"><div class="section-heading"><div><p class="eyebrow">Pipeline</p><h2>Steps</h2></div></div>
+<section class="panel table-panel"><table><thead><tr><th>Step</th><th>Status</th><th>Time</th></tr></thead><tbody>
+{% for step in summary.steps %}<tr><td>{{ step.name }}</td><td><span class="badge status-{{ step.badge }}">{{ step.status }}</span></td><td>{% if step.seconds %}{{ step.seconds }} s{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></section></section>
+{% endif %}
+
+{% if pending %}<script>window.setTimeout(function(){ window.location.reload(); }, 15000);</script>{% endif %}
+<script>
+(function () {
+  var box = document.querySelector("[data-only-build]");
+  if (!box) return;
+  box.addEventListener("change", function () {
+    document.querySelectorAll("[data-group]").forEach(function (group) {
+      var shown = 0;
+      group.querySelectorAll("tbody tr").forEach(function (row) {
+        var show = !box.checked || row.hasAttribute("data-build-input");
+        row.hidden = !show; if (show) shown++;
+      });
+      group.hidden = shown === 0;
+    });
+  });
+})();
+</script>
+{% endblock %}

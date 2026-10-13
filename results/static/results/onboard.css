@@ -1,0 +1,20 @@
+.onboard-form textarea{width:100%;min-width:0;border:1px solid var(--line);background:#081524;color:var(--text);border-radius:9px;padding:10px 12px;font:inherit;resize:vertical}
+.onboard-form input{width:100%}
+.onboard-row{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.onboard-section{margin:26px 0 16px}
+.onboard-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
+.onboard-stats div{border:1px solid var(--line);border-radius:12px;padding:12px}
+.onboard-stats strong{display:block;font-size:24px}
+.onboard-stats span{color:var(--muted);font-size:12px}
+.onboard-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.onboard-checklist{margin:12px 0 0;padding-left:20px}
+.onboard-checklist li{margin:6px 0}
+.onboard-group{margin-bottom:14px}
+.onboard-group h3{margin:0;padding:16px 18px 4px;font-size:16px}
+.onboard-group td{white-space:normal;vertical-align:top}
+.onboard-req{min-width:240px;max-width:360px}
+.onboard-value{min-width:180px;max-width:360px;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.onboard-source{max-width:360px;overflow-wrap:anywhere;font-size:13px}
+.onboard-toggle{display:flex;align-items:center;gap:8px;font-size:13px}
+.onboard-toggle input{min-width:0}
+@media(max-width:900px){.onboard-stats{grid-template-columns:1fr}.onboard-row{grid-template-columns:1fr}}

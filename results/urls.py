@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, workbook
+from . import board_requests, views, workbook
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -11,6 +11,8 @@ urlpatterns = [
         views.elf_submission_detail,
         name="elf-submission-detail",
     ),
+    path("onboard/", board_requests.board_request_new, name="board-request-new"),
+    path("onboard/<uuid:request_id>/", board_requests.board_request_detail, name="board-request-detail"),
     path("boards/<slug:slug>/", views.board_detail, name="board-detail"),
     path("boards/<slug:slug>/info/", views.board_info, name="board-info"),
     path(
@@ -76,6 +78,16 @@ urlpatterns = [
         "api/v1/elf/<uuid:submission_id>/status/",
         views.elf_submission_status,
         name="api-elf-status",
+    ),
+    path(
+        "api/v1/board-requests/<uuid:request_id>/status/",
+        board_requests.board_request_status,
+        name="api-board-request-status",
+    ),
+    path(
+        "api/v1/board-requests/<uuid:request_id>/result/",
+        board_requests.board_request_result,
+        name="api-board-request-result",
     ),
     path(
         "api/v1/elf/<uuid:submission_id>/download/",

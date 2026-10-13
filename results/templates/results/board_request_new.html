@@ -1,0 +1,78 @@
+{% extends "results/base.html" %}
+{% load static %}
+{% block title %}New board · {{ portal_name }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><span>New board</span></nav>
+<section class="hero compact"><div><p class="eyebrow">Board onboarding · administrators</p><h1>New board</h1><p class="muted">Name a board and its model. The agent finds its official documentation and lists everything the runner needs to build firmware and a boot image for it.</p></div></section>
+<section class="two-column upload-layout">
+  <article class="panel">
+    <h2>Board</h2>
+    <form class="upload-form onboard-form" method="post">
+      {% csrf_token %}
+      <label>Board name *
+        <input name="board_name" required maxlength="120" value="{{ form.board_name }}" placeholder="Milk-V Megrez" data-board-name>
+      </label>
+      <label>SoC / model
+        <input name="soc" maxlength="120" value="{{ form.soc }}" placeholder="ESWIN EIC7700X (SiFive P550)" data-board-soc>
+      </label>
+      <label>Board id *
+        <input name="board_id" required pattern="[a-z0-9][a-z0-9_]{1,62}" value="{{ form.board_id }}" placeholder="milkv_megrez_eic7700x" data-board-id>
+        <span>Lower-case letters, digits and _; becomes the runner preset name.</span>
+      </label>
+      <div class="onboard-row">
+        <label>ISA string
+          <input name="isa" maxlength="200" value="{{ form.isa }}" placeholder="rv64imafdc_zicsr_zifencei">
+        </label>
+        <label>Runner hart
+          <input name="runner_hart" inputmode="numeric" value="{{ form.runner_hart }}" placeholder="unknown">
+        </label>
+      </div>
+      <label>Other information
+        <textarea name="hint" rows="4" maxlength="4000" placeholder="Vendor website, links to manuals or repositories, board revision, boot medium you plan to use...">{{ form.hint }}</textarea>
+      </label>
+      <label>Known facts <span class="muted">(optional, one per line)</span>
+        <textarea name="known_facts" rows="4" placeholder="boot.medium: SD card&#10;uart.base: 0x10000000">{{ form.known_facts }}</textarea>
+        <span>Requirement id and value; these are taken as given and win over documents.</span>
+      </label>
+      <button class="button" type="submit">Find requirements</button>
+    </form>
+  </article>
+  <article class="panel">
+    <h2>What happens next</h2>
+    <ol class="workflow-list">
+      <li>Jenkins (<code>riscv-board-pipeline</code>) asks Codex to search the web for the board's official manuals, SoC reference manual, boot guides and vendor sources.</li>
+      <li>Every link is fetched; links that do not resolve are dropped. Vendor repositories contribute only their board files.</li>
+      <li>Each runner requirement (boot chain, image format, load address, harts, UART, timer, memory map...) is answered from those documents, with a verbatim quote checked by code.</li>
+      <li>The memory layout is decided, the runner board files are generated and the firmware is built when enough is known.</li>
+      <li>This portal shows each requirement with its value and source, and what still needs a person.</li>
+    </ol>
+    <p class="muted">Nothing is flashed and no board is touched. The search and analysis take several minutes.</p>
+  </article>
+</section>
+<section class="elf-history">
+<h2>Board requests</h2>
+<section class="panel table-panel"><table><thead><tr><th>Requested</th><th>User</th><th>Board</th><th>Status</th><th>Requirements</th><th>Jenkins</th></tr></thead><tbody>
+{% for item in board_requests %}<tr>
+  <td><a href="{{ item.get_absolute_url }}">{{ item.created_at|date:"M d, Y H:i" }}</a></td>
+  <td>{{ item.requested_by.get_username }}</td>
+  <td><a href="{{ item.get_absolute_url }}"><strong>{{ item.board_name }}</strong></a><br><span class="muted">{{ item.soc|default:item.board_id }}</span></td>
+  <td><span class="badge status-{{ item.status|lower }}">{% if item.status == "UNSTABLE" %}Needs a person{% elif item.status == "PASS" %}Firmware built{% else %}{{ item.get_status_display }}{% endif %}</span></td>
+  <td>{% if item.result %}{{ item.result.requirements|length }} listed{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td>{% if item.jenkins_build_url or item.jenkins_queue_url %}<a class="button secondary small" href="{{ item.jenkins_build_link }}" target="_blank" rel="noopener">{% if item.jenkins_build_url %}Build{% else %}Queue{% endif %}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+</tr>{% empty %}<tr><td colspan="6" class="empty">No board requests yet.</td></tr>{% endfor %}
+</tbody></table></section>
+</section>
+<script>
+(function () {
+  var name = document.querySelector("[data-board-name]"), soc = document.querySelector("[data-board-soc]"),
+      id = document.querySelector("[data-board-id]"), touched = !!id.value;
+  id.addEventListener("input", function () { touched = true; });
+  function suggest() {
+    if (touched) return;
+    var chip = (soc.value.split("(")[0].trim().split(/\s+/).pop() || "");
+    id.value = (name.value + " " + chip).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 63);
+  }
+  name.addEventListener("input", suggest); soc.addEventListener("input", suggest);
+})();
+</script>
+{% endblock %}
