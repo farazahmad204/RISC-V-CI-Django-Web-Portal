@@ -1,17 +1,13 @@
-{% extends "results/base.html" %}
-{% block title %}Run ELF history · {{ portal_name }}{% endblock %}
-{% block content %}
-<nav class="crumbs"><a href="{% url 'dashboard' %}">Dashboard</a><span>/</span><a href="{% url 'elf-submit' %}">Run ELF</a><span>/</span><span>History</span></nav>
-<section class="hero compact"><div><p class="eyebrow">Single ELF execution</p><h1>Run ELF history</h1><p class="muted">{% if show_users %}Every uploaded ELF, who ran it, its result and its Jenkins build.{% else %}Your uploaded ELFs, their results and Jenkins builds.{% endif %}</p></div><a class="button" href="{% url 'elf-submit' %}">Run an ELF</a></section>
-
-<form class="run-filter elf-history-filter" method="get">
+<section class="elf-history" id="history">
+<h2>{% if show_users %}Execution history{% else %}Your executions{% endif %}</h2>
+<p class="muted">{% if show_users %}Every uploaded ELF, who ran it, its result and its Jenkins build.{% else %}Your uploaded ELFs, their results and Jenkins builds.{% endif %}</p>
+<form class="run-filter elf-history-filter" method="get" action="{% url 'elf-submit' %}#history">
   <input type="search" name="q" value="{{ selected.q }}" placeholder="ELF name" aria-label="ELF name">
   {% if show_users %}<select name="user" aria-label="User" data-autosubmit><option value="">All users</option>{% for name in users %}<option value="{{ name }}"{% if selected.user == name %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>{% endif %}
-  <select name="board" aria-label="Board" data-autosubmit><option value="">All boards</option>{% for board in boards %}<option value="{{ board.slug }}"{% if selected.board == board.slug %} selected{% endif %}>{{ board.name }}</option>{% endfor %}</select>
+  <select name="board" aria-label="Board" data-autosubmit><option value="">All boards</option>{% for board in history_boards %}<option value="{{ board.slug }}"{% if selected.board == board.slug %} selected{% endif %}>{{ board.name }}</option>{% endfor %}</select>
   <select name="status" aria-label="Status" data-autosubmit><option value="">All statuses</option>{% for value, label in statuses %}<option value="{{ value }}"{% if selected.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-  <button class="button secondary" type="submit">Apply</button>{% if selected.q or selected.user or selected.board or selected.status %}<a class="button secondary" href="{% url 'elf-history' %}">Reset</a>{% endif %}
+  <button class="button secondary" type="submit">Apply</button>{% if selected.q or selected.user or selected.board or selected.status %}<a class="button secondary" href="{% url 'elf-submit' %}#history">Reset</a>{% endif %}
 </form>
-
 <section class="panel table-panel"><table><thead><tr><th>Submitted</th>{% if show_users %}<th>User</th>{% endif %}<th>ELF</th><th>Board</th><th>Status</th><th>Result</th><th>Jenkins</th></tr></thead><tbody>
 {% for item in submissions %}<tr>
   <td><a href="{{ item.get_absolute_url }}">{{ item.created_at|date:"M d, Y H:i" }}</a></td>
@@ -23,4 +19,4 @@
   <td>{% if item.jenkins_build_url or item.run %}<a class="button secondary small" href="{{ item.jenkins_build_link }}" target="_blank" rel="noopener">Build</a>{% elif item.jenkins_queue_url %}<a class="button secondary small" href="{{ item.jenkins_queue_link }}" target="_blank" rel="noopener">Queue</a>{% else %}<span class="muted">—</span>{% endif %}</td>
 </tr>{% empty %}<tr><td colspan="{% if show_users %}7{% else %}6{% endif %}" class="empty">No ELF runs match these filters.</td></tr>{% endfor %}
 </tbody></table></section>
-{% endblock %}
+</section>
