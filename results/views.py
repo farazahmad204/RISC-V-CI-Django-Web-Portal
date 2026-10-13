@@ -79,6 +79,12 @@ def _jenkins_request(url, authorization, *, data=None, headers=None):
     return urlopen(request, timeout=30, context=_jenkins_ssl_context())
 
 
+def _external_url(request, path):
+    if settings.PORTAL_EXTERNAL_URL:
+        return settings.PORTAL_EXTERNAL_URL.rstrip("/") + path
+    return request.build_absolute_uri(path)
+
+
 def _trigger_single_elf_job(request, submission, raw_download_token):
     base = settings.JENKINS_TRIGGER_URL.rstrip("/")
     user = settings.JENKINS_TRIGGER_USER
@@ -96,11 +102,7 @@ def _trigger_single_elf_job(request, submission, raw_download_token):
         if exc.code != 404:
             raise
 
-    download_path = reverse("elf-download", args=[submission.id])
-    if settings.PORTAL_EXTERNAL_URL:
-        download_url = settings.PORTAL_EXTERNAL_URL.rstrip("/") + download_path
-    else:
-        download_url = request.build_absolute_uri(download_path)
+    download_url = _external_url(request, reverse("elf-download", args=[submission.id]))
     parameters = urlencode(
         {
             "SUBMISSION_ID": str(submission.id),
@@ -109,6 +111,9 @@ def _trigger_single_elf_job(request, submission, raw_download_token):
             "ELF_DOWNLOAD_TOKEN": raw_download_token,
             "ELF_SHA256": submission.sha256,
             "ELF_NAME": submission.original_name,
+            # The job names the uploader in its build title and links back here.
+            "PORTAL_USER": submission.uploaded_by.get_username(),
+            "PORTAL_SUBMISSION_URL": _external_url(request, submission.get_absolute_url()),
         }
     ).encode()
     job = quote(settings.JENKINS_SINGLE_ELF_JOB, safe="")
@@ -643,10 +648,84 @@ def ingest_run(request):
                 submission.run = run
                 submission.status = run.status
                 submission.download_token_hash = ""
+                submission.status_reason = ""
+                if not submission.jenkins_build_url:
+                    submission.jenkins_build_url = str((run.metadata or {}).get("build_url", ""))[:1000]
                 submission.save(
-                    update_fields=["run", "status", "download_token_hash", "updated_at"]
+                    update_fields=["run", "status", "download_token_hash", "status_reason",
+                                   "jenkins_build_url", "updated_at"]
                 )
     return JsonResponse(
         {"id": run.id, "url": run.get_absolute_url(), "created": created},
         status=201 if created else 200,
+    )
+
+
+SUBMISSION_REPORTABLE = {Status.RUNNING, Status.ERROR, Status.ABORTED}
+
+
+@csrf_exempt
+@require_POST
+def elf_submission_status(request, submission_id):
+    """The Run ELF job reports RUNNING (with its build URL) when it starts, and ERROR or ABORTED
+    when it ends without publishing a result. A published result always wins."""
+    if not _authorized(request):
+        return JsonResponse({"error": "unauthorized"}, status=401)
+    submission = ElfSubmission.objects.filter(id=submission_id).first()
+    if submission is None:
+        return JsonResponse({"error": "submission not found"}, status=404)
+    try:
+        payload = json.loads(request.body)
+        status = str(payload.get("status", ""))
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({"error": "invalid payload"}, status=400)
+    if status not in SUBMISSION_REPORTABLE:
+        return JsonResponse({"error": f"status must be one of {sorted(SUBMISSION_REPORTABLE)}"}, status=400)
+    fields = ["updated_at"]
+    build_url = str(payload.get("build_url", ""))[:1000]
+    if build_url.startswith(("http://", "https://")):
+        submission.jenkins_build_url = build_url
+        fields.append("jenkins_build_url")
+    if submission.run_id is None:
+        submission.status = status
+        submission.status_reason = str(payload.get("reason", ""))[:500]
+        fields += ["status", "status_reason"]
+    submission.save(update_fields=fields)
+    return JsonResponse({"status": submission.status})
+
+
+@login_required
+def elf_history(request):
+    """Every Run ELF submission with who ran it, its result and its Jenkins build. People see
+    their own; portal staff see everyone's."""
+    submissions = ElfSubmission.objects.select_related("board", "run", "uploaded_by")
+    if not request.user.is_staff:
+        submissions = submissions.filter(uploaded_by=request.user)
+    user = request.GET.get("user", "").strip()
+    board = request.GET.get("board", "").strip()
+    status = request.GET.get("status", "").strip()
+    query = request.GET.get("q", "").strip()
+    if user and request.user.is_staff:
+        submissions = submissions.filter(uploaded_by__username=user)
+    if board:
+        submissions = submissions.filter(board__slug=board)
+    if status:
+        submissions = submissions.filter(status=status)
+    if query:
+        submissions = submissions.filter(original_name__icontains=query)
+    users = []
+    if request.user.is_staff:
+        users = sorted(set(ElfSubmission.objects.values_list("uploaded_by__username", flat=True)))
+    return render(
+        request,
+        "results/elf_history.html",
+        {
+            "submissions": submissions[:300],
+            "users": users,
+            "boards": Board.objects.filter(elf_submissions__isnull=False).distinct().order_by("name"),
+            "statuses": [choice for choice in Status.choices
+                         if choice[0] not in {Status.SKIPPED, Status.UNSTABLE}],
+            "selected": {"user": user, "board": board, "status": status, "q": query},
+            "show_users": request.user.is_staff,
+        },
     )

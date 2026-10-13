@@ -29,6 +29,7 @@ class Status(models.TextChoices):
     UNSTABLE = "UNSTABLE", "Unstable"
     SKIPPED = "SKIPPED", "Skipped"
     ABORTED = "ABORTED", "Aborted"
+    ERROR = "ERROR", "Error"
     UNKNOWN = "UNKNOWN", "Unknown"
 
 
@@ -105,6 +106,10 @@ class ElfSubmission(models.Model):
     download_token_hash = models.CharField(max_length=64)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
     jenkins_queue_url = models.URLField(max_length=1000, blank=True)
+    # The Jenkins build, reported by the job when it starts (the queue URL above is only the
+    # request), and why it ended without a result when it did.
+    jenkins_build_url = models.URLField(max_length=1000, blank=True)
+    status_reason = models.CharField(max_length=500, blank=True)
     run = models.OneToOneField(
         "TestRun",
         on_delete=models.SET_NULL,
@@ -127,6 +132,12 @@ class ElfSubmission(models.Model):
     @property
     def jenkins_queue_link(self):
         return jenkins_link(self.jenkins_queue_url)
+
+    @property
+    def jenkins_build_link(self):
+        """The Jenkins build page, else the queue item while the build has not started."""
+        url = self.jenkins_build_url or ((self.run.metadata or {}).get("build_url", "") if self.run else "")
+        return jenkins_link(url) if url else self.jenkins_queue_link
 
 
 class JenkinsJob(models.Model):

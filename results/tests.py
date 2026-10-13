@@ -1479,3 +1479,97 @@ class IngestSizeTests(TestCase):
                                         content_type="application/json",
                                         headers={"X-Portal-Token": "test-token"})
         self.assertNotEqual(response.status_code, 400, response.content[:200])
+
+
+class RunElfJobTests(TestCase):
+    def setUp(self):
+        self.board = Board.objects.create(slug="milkv-megrez", name="Milk-V Megrez")
+        self.alice = get_user_model().objects.create_user("alice", password="safe-test-password")
+        self.bob = get_user_model().objects.create_user("bob", password="safe-test-password")
+        self.admin = get_user_model().objects.create_user("admin1", password="safe-test-password",
+                                                           is_staff=True)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.media = override_settings(MEDIA_ROOT=Path(self.tmp.name))
+        self.media.enable()
+
+    def tearDown(self):
+        self.media.disable()
+        self.tmp.cleanup()
+
+    def _submission(self, user, name="minimal.elf", **extra):
+        return ElfSubmission.objects.create(
+            uploaded_by=user, board=self.board, elf=SimpleUploadedFile(name, b"\x7fELF"),
+            original_name=name, sha256="0" * 64, size_bytes=4, download_token_hash="0" * 64, **extra)
+
+    def _status(self, submission, body, token="test-token"):
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            return self.client.post(reverse("api-elf-status", args=[submission.id]), data=json.dumps(body),
+                                    content_type="application/json", headers={"X-Portal-Token": token})
+
+    def test_trigger_names_the_uploader_and_links_the_submission(self):
+        from results import views
+        submission = self._submission(self.alice)
+        sent = {}
+
+        class Response:
+            headers = {"Location": "https://jenkins/queue/item/9/"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"crumbRequestField": "Jenkins-Crumb", "crumb": "c"}'
+
+        def fake_request(url, authorization, *, data=None, headers=None):
+            if data:
+                sent.update(dict(pair.split("=", 1) for pair in data.decode().split("&")))
+            return Response()
+
+        request = __import__("django.test", fromlist=["RequestFactory"]).RequestFactory().get("/")
+        with override_settings(JENKINS_TRIGGER_URL="https://jenkins", JENKINS_TRIGGER_USER="portal",
+                               JENKINS_TRIGGER_TOKEN="t", PORTAL_EXTERNAL_URL="https://ci.example"), \
+                patch.object(views, "_jenkins_request", side_effect=fake_request):
+            views._trigger_single_elf_job(request, submission, "raw")
+        self.assertEqual(sent["PORTAL_USER"], "alice")
+        self.assertIn(f"run-elf%2F{submission.id}", sent["PORTAL_SUBMISSION_URL"].replace("/", "%2F"))
+
+    def test_the_job_reports_its_build_and_an_ending_without_a_result(self):
+        submission = self._submission(self.alice)
+        self.assertEqual(self._status(submission, {"status": "RUNNING",
+                                                   "build_url": "https://jenkins/job/x/16/"}).status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual((submission.status, submission.jenkins_build_url), ("RUNNING", "https://jenkins/job/x/16/"))
+        self._status(submission, {"status": "ERROR", "reason": "Jenkins build ended ABORTED"})
+        submission.refresh_from_db()
+        self.assertEqual((submission.status, submission.status_reason), ("ERROR", "Jenkins build ended ABORTED"))
+        self.assertEqual(self._status(submission, {"status": "PASS"}).status_code, 400)
+        self.assertEqual(self._status(submission, {"status": "RUNNING"}, token="wrong").status_code, 401)
+
+    def test_a_published_result_is_not_overwritten_by_a_status_report(self):
+        job = JenkinsJob.objects.create(board=self.board, name="riscv-uart-single-elf")
+        run = TestRun.objects.create(job=job, build_number=16, status=Status.FAIL)
+        submission = self._submission(self.alice, run=run, status=Status.FAIL)
+        self._status(submission, {"status": "ERROR", "build_url": "https://jenkins/job/x/16/"})
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, Status.FAIL)
+        self.assertEqual(submission.jenkins_build_url, "https://jenkins/job/x/16/")
+
+    def test_history_shows_staff_every_user_and_people_their_own(self):
+        self._submission(self.alice, "a.elf", jenkins_build_url="https://jenkins/job/x/1/")
+        self._submission(self.bob, "b.elf")
+        self.client.force_login(self.admin)
+        html = self.client.get(reverse("elf-history")).content.decode()
+        self.assertIn("a.elf", html)
+        self.assertIn("b.elf", html)
+        self.assertIn("<td>alice</td>", html)
+        self.assertIn('/job/x/1/" target="_blank"', html)  # rewritten by jenkins_link()
+        filtered = self.client.get(reverse("elf-history") + "?user=bob").content.decode()
+        self.assertNotIn("a.elf", filtered)
+        self.client.force_login(self.alice)
+        own = self.client.get(reverse("elf-history")).content.decode()
+        self.assertIn("a.elf", own)
+        self.assertNotIn("b.elf", own)
+        self.assertNotIn("<th>User</th>", own)

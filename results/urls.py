@@ -5,6 +5,7 @@ from . import views, workbook
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("run-elf/", views.elf_submit, name="elf-submit"),
+    path("run-elf/history/", views.elf_history, name="elf-history"),
     path(
         "run-elf/<uuid:submission_id>/",
         views.elf_submission_detail,
@@ -71,6 +72,11 @@ urlpatterns = [
     path("api/v1/triage/", workbook.ingest_triage, name="api-ingest-triage"),
     path("api/v1/triage/feedback/", workbook.triage_feedback, name="api-triage-feedback"),
     path("api/v1/boards/health/", views.ingest_board_health, name="api-board-health"),
+    path(
+        "api/v1/elf/<uuid:submission_id>/status/",
+        views.elf_submission_status,
+        name="api-elf-status",
+    ),
     path(
         "api/v1/elf/<uuid:submission_id>/download/",
         views.elf_download,
