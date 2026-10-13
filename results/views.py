@@ -176,9 +176,6 @@ def elf_submit(request):
             messages.success(request, "ELF queued for execution.")
             return redirect(submission)
 
-    recent = ElfSubmission.objects.filter(uploaded_by=request.user).select_related("board", "run")[
-        :20
-    ]
     board_rows = []
     client_rules = {}
     for board in boards:
@@ -201,7 +198,7 @@ def elf_submit(request):
             "boards": boards,
             "board_rows": board_rows,
             "client_rules": client_rules,
-            "recent_submissions": recent,
+            **_elf_history(request),
             "max_upload_mib": settings.PORTAL_ELF_UPLOAD_MAX_BYTES // (1024 * 1024),
         },
     )
@@ -694,10 +691,9 @@ def elf_submission_status(request, submission_id):
     return JsonResponse({"status": submission.status})
 
 
-@login_required
-def elf_history(request):
+def _elf_history(request):
     """Every Run ELF submission with who ran it, its result and its Jenkins build. People see
-    their own; portal staff see everyone's."""
+    their own; portal staff see everyone's. Filters come from the query string."""
     submissions = ElfSubmission.objects.select_related("board", "run", "uploaded_by")
     if not request.user.is_staff:
         submissions = submissions.filter(uploaded_by=request.user)
@@ -716,16 +712,19 @@ def elf_history(request):
     users = []
     if request.user.is_staff:
         users = sorted(set(ElfSubmission.objects.values_list("uploaded_by__username", flat=True)))
-    return render(
-        request,
-        "results/elf_history.html",
-        {
-            "submissions": submissions[:300],
-            "users": users,
-            "boards": Board.objects.filter(elf_submissions__isnull=False).distinct().order_by("name"),
-            "statuses": [choice for choice in Status.choices
-                         if choice[0] not in {Status.SKIPPED, Status.UNSTABLE}],
-            "selected": {"user": user, "board": board, "status": status, "q": query},
-            "show_users": request.user.is_staff,
-        },
-    )
+    return {
+        "submissions": submissions[:300],
+        "users": users,
+        "history_boards": Board.objects.filter(elf_submissions__isnull=False).distinct().order_by("name"),
+        "statuses": [choice for choice in Status.choices
+                     if choice[0] not in {Status.SKIPPED, Status.UNSTABLE}],
+        "selected": {"user": user, "board": board, "status": status, "q": query},
+        "show_users": request.user.is_staff,
+    }
+
+
+@login_required
+def elf_history(request):
+    """The history is part of the Run ELF page now; keep old links working."""
+    query = request.GET.urlencode()
+    return redirect(reverse("elf-submit") + (f"?{query}" if query else "") + "#history")

@@ -1561,15 +1561,23 @@ class RunElfJobTests(TestCase):
         self._submission(self.alice, "a.elf", jenkins_build_url="https://jenkins/job/x/1/")
         self._submission(self.bob, "b.elf")
         self.client.force_login(self.admin)
-        html = self.client.get(reverse("elf-history")).content.decode()
+        html = self.client.get(reverse("elf-submit")).content.decode()
+        self.assertIn('id="history"', html)
         self.assertIn("a.elf", html)
         self.assertIn("b.elf", html)
         self.assertIn("<td>alice</td>", html)
         self.assertIn('/job/x/1/" target="_blank"', html)  # rewritten by jenkins_link()
-        filtered = self.client.get(reverse("elf-history") + "?user=bob").content.decode()
+        filtered = self.client.get(reverse("elf-submit") + "?user=bob").content.decode()
         self.assertNotIn("a.elf", filtered)
         self.client.force_login(self.alice)
-        own = self.client.get(reverse("elf-history")).content.decode()
+        own = self.client.get(reverse("elf-submit")).content.decode()
         self.assertIn("a.elf", own)
         self.assertNotIn("b.elf", own)
         self.assertNotIn("<th>User</th>", own)
+
+
+    def test_the_old_history_address_redirects_to_the_run_elf_page(self):
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse("elf-history") + "?status=ERROR")
+        self.assertRedirects(response, reverse("elf-submit") + "?status=ERROR#history",
+                             fetch_redirect_response=False)
