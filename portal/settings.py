@@ -119,6 +119,7 @@ JENKINS_TRIGGER_URL = os.getenv("JENKINS_TRIGGER_URL", "")
 JENKINS_TRIGGER_USER = os.getenv("JENKINS_TRIGGER_USER", "")
 JENKINS_TRIGGER_TOKEN = os.getenv("JENKINS_TRIGGER_TOKEN", "")
 JENKINS_SINGLE_ELF_JOB = os.getenv("JENKINS_SINGLE_ELF_JOB", "riscv-uart-single-elf")
+JENKINS_BOARD_PIPELINE_JOB = os.getenv("JENKINS_BOARD_PIPELINE_JOB", "riscv-board-pipeline")
 PORTAL_NAME = os.getenv(
     "PORTAL_NAME", "RISC-V Architectural Compliance & Post-Silicon Regression Platform"
 )

@@ -402,3 +402,41 @@ class TriageReport(models.Model):
 
     def __str__(self):
         return f"{self.test_result}: {self.classification}"
+
+
+class BoardRequest(models.Model):
+    """An admin's request to onboard a new board: the riscv-board-pipeline job finds the board's
+    documents, answers every runner requirement it can and builds the runner, then publishes
+    its result.json here."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="board_requests"
+    )
+    board_name = models.CharField(max_length=120)
+    board_id = models.CharField(max_length=63)
+    soc = models.CharField("SoC / model", max_length=120, blank=True)
+    isa = models.CharField("ISA string", max_length=200, blank=True)
+    runner_hart = models.PositiveSmallIntegerField(null=True, blank=True)
+    hint = models.TextField("Other information", blank=True)
+    known_facts = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED)
+    status_reason = models.CharField(max_length=500, blank=True)
+    jenkins_queue_url = models.URLField(max_length=1000, blank=True)
+    jenkins_build_url = models.URLField(max_length=1000, blank=True)
+    result = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.board_name} ({self.board_id})"
+
+    def get_absolute_url(self):
+        return reverse("board-request-detail", kwargs={"request_id": self.id})
+
+    @property
+    def jenkins_build_link(self):
+        return jenkins_link(self.jenkins_build_url or self.jenkins_queue_url)

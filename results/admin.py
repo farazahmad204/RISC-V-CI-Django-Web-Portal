@@ -5,6 +5,7 @@ from .models import (
     AnalysisValue,
     Artifact,
     Board,
+    BoardRequest,
     ElfSubmission,
     JenkinsJob,
     TestCase,
@@ -19,6 +20,14 @@ class ElfSubmissionAdmin(admin.ModelAdmin):
     list_filter = ("status", "board")
     search_fields = ("original_name", "sha256", "uploaded_by__username")
     readonly_fields = ("sha256", "size_bytes", "download_token_hash", "created_at", "updated_at")
+
+
+@admin.register(BoardRequest)
+class BoardRequestAdmin(admin.ModelAdmin):
+    list_display = ("board_name", "board_id", "requested_by", "status", "created_at")
+    list_filter = ("status",)
+    search_fields = ("board_name", "board_id", "soc", "requested_by__username")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(Board)

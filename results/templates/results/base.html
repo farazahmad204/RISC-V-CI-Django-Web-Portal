@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{% static 'results/portal.css' %}?v=20261008c">
   <link rel="stylesheet" href="{% static 'results/suites.css' %}?v=20261008c">
   <link rel="stylesheet" href="{% static 'results/elf_upload.css' %}?v=20261008c">
+  <link rel="stylesheet" href="{% static 'results/onboard.css' %}?v=20261013a">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +19,7 @@
     <nav>
       <a href="{% url 'dashboard' %}">Dashboard</a>
       <a href="{% url 'elf-submit' %}">Run ELF</a>
+      {% if request.user.is_staff %}<a href="{% url 'board-request-new' %}">New board</a>{% endif %}
       {% if request.user.is_staff %}<a href="/portal/admin/">Administration</a>{% endif %}
       <span class="user">{{ request.user.username }}</span>
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="link-button">Sign out</button></form>

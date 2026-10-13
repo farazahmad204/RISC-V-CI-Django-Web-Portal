@@ -85,7 +85,8 @@ def _external_url(request, path):
     return request.build_absolute_uri(path)
 
 
-def _trigger_single_elf_job(request, submission, raw_download_token):
+def _trigger_jenkins_job(job_name, parameters):
+    """Queue a parameterized Jenkins build; returns the queue item URL."""
     base = settings.JENKINS_TRIGGER_URL.rstrip("/")
     user = settings.JENKINS_TRIGGER_USER
     token = settings.JENKINS_TRIGGER_TOKEN
@@ -102,8 +103,27 @@ def _trigger_single_elf_job(request, submission, raw_download_token):
         if exc.code != 404:
             raise
 
+    job = quote(job_name, safe="")
+    trigger_url = f"{base}/job/{job}/buildWithParameters"
+    try:
+        with _jenkins_request(
+            trigger_url,
+            authorization,
+            data=urlencode(parameters).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded", **crumb_headers},
+        ) as response:
+            return urljoin(base + "/", response.headers.get("Location", ""))
+    except (HTTPError, URLError) as exc:
+        detail = ""
+        if isinstance(exc, HTTPError):
+            detail = exc.read(500).decode(errors="replace").strip()
+        raise RuntimeError(f"Jenkins rejected the request: {exc}. {detail}".strip()) from exc
+
+
+def _trigger_single_elf_job(request, submission, raw_download_token):
     download_url = _external_url(request, reverse("elf-download", args=[submission.id]))
-    parameters = urlencode(
+    return _trigger_jenkins_job(
+        settings.JENKINS_SINGLE_ELF_JOB,
         {
             "SUBMISSION_ID": str(submission.id),
             "TARGET_BOARD": submission.board.slug,
@@ -114,23 +134,8 @@ def _trigger_single_elf_job(request, submission, raw_download_token):
             # The job names the uploader in its build title and links back here.
             "PORTAL_USER": submission.uploaded_by.get_username(),
             "PORTAL_SUBMISSION_URL": _external_url(request, submission.get_absolute_url()),
-        }
-    ).encode()
-    job = quote(settings.JENKINS_SINGLE_ELF_JOB, safe="")
-    trigger_url = f"{base}/job/{job}/buildWithParameters"
-    try:
-        with _jenkins_request(
-            trigger_url,
-            authorization,
-            data=parameters,
-            headers={"Content-Type": "application/x-www-form-urlencoded", **crumb_headers},
-        ) as response:
-            return urljoin(base + "/", response.headers.get("Location", ""))
-    except (HTTPError, URLError) as exc:
-        detail = ""
-        if isinstance(exc, HTTPError):
-            detail = exc.read(500).decode(errors="replace").strip()
-        raise RuntimeError(f"Jenkins rejected the request: {exc}. {detail}".strip()) from exc
+        },
+    )
 
 
 @login_required
