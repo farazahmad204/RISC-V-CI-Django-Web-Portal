@@ -1457,3 +1457,25 @@ class TriageReportPageTests(TestCase):
             strings = book.read("xl/sharedStrings.xml").decode() if "xl/sharedStrings.xml" in book.namelist() \
                 else "".join(book.read(n).decode() for n in book.namelist() if n.startswith("xl/worksheets/"))
             self.assertIn("Implementation-defined behavior", strings)
+
+
+class IngestSizeTests(TestCase):
+    def test_a_run_larger_than_djangos_default_upload_limit_is_accepted(self):
+        payload = {
+            "board": {"slug": "milkv-megrez", "name": "Milk-V Megrez"},
+            "job": {"name": "megrez-uart-weekly"},
+            "build_number": 8,
+            "status": "UNSTABLE",
+            "results": [
+                {"name": f"T{n}-00", "hardware_status": "FAIL", "sail_status": "PASS",
+                 "failure_reason": "x" * 30000}
+                for n in range(100)
+            ],
+        }
+        body = json.dumps(payload)
+        self.assertGreater(len(body), 2621440)  # Django's default DATA_UPLOAD_MAX_MEMORY_SIZE
+        with override_settings(PORTAL_INGEST_TOKEN="test-token"):
+            response = self.client.post(reverse("api-ingest-run"), data=body,
+                                        content_type="application/json",
+                                        headers={"X-Portal-Token": "test-token"})
+        self.assertNotEqual(response.status_code, 400, response.content[:200])
